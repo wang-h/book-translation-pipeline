@@ -89,7 +89,7 @@ Poll every 10 seconds. Log `extracted_pages / total_pages` progress when `runnin
 
 ### Step 4: Download results
 
-When `state == "done"`, download `full_zip_url`. Unzip into `work/ocr/`:
+When `state == "done"`, download `full_zip_url`. Unzip into `work/p1_ocr/`:
 - `full.md` — primary Markdown output.
 - `content_list.json` — structured content with bounding boxes.
 - `images/` — extracted images.
@@ -116,9 +116,9 @@ All error recovery stays within the cloud API. Never fall back to local CLI.
 
 ## Outputs
 
-- `work/ocr/full.md`
-- `work/ocr/content_list.json`
-- `work/ocr/images/`
+- `work/p1_ocr/full.md`
+- `work/p1_ocr/content_list.json`
+- `work/p1_ocr/images/`
 - `config/chapter_manifest.json` (generated from headings in `full.md`)
 
 ## Helper Scripts

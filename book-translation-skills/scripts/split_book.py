@@ -97,7 +97,7 @@ def split_section_by_paragraphs(section: dict, max_tokens: int) -> list[dict]:
 def main():
     parser = argparse.ArgumentParser(description="Split Markdown by headings and token limits")
     parser.add_argument("input_file", help="Input Markdown file")
-    parser.add_argument("--output-dir", default="work/repaired", help="Output directory for chunks")
+    parser.add_argument("--output-dir", default="work/p2_repaired", help="Output directory for chunks")
     parser.add_argument("--max-tokens", type=int, default=4000, help="Max tokens per chunk")
     args = parser.parse_args()
 

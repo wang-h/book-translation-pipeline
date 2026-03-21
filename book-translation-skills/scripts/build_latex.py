@@ -7,32 +7,85 @@ Generates book.tex, preamble.tex, frontmatter.tex, and chapters/*.tex.
 """
 
 import argparse
-import json
 import pathlib
 import re
 import sys
 
 
+HEADING_MAP = {
+    1: "\\chapter",
+    2: "\\section",
+    3: "\\subsection",
+    4: "\\subsubsection",
+}
+
+
+def _format_author_table(author_lines: list[str]) -> str:
+    """Format author introduction lines as a two-column longtable."""
+    entries = []
+    for al in author_lines:
+        m = re.match(r'^(.+?（[^）]+）)\s*[…·・\s]*\s*(.*)$', al)
+        if m:
+            name_reading = m.group(1).strip()
+            affil = m.group(2).strip() or "——"
+            entries.append((name_reading, affil))
+        elif al.strip():
+            entries.append((al.strip(), ""))
+    if not entries:
+        return ""
+    lines = [
+        "{\\small",
+        "\\setlength{\\LTleft}{0pt}",
+        "\\setlength{\\LTright}{0pt}",
+        "\\begin{longtable}{@{}p{0.38\\textwidth}p{0.58\\textwidth}@{}}",
+    ]
+    for name, affil in entries:
+        lines.append(f"{escape_latex(name)} & {escape_latex(affil)} \\\\[3pt]")
+    lines.append("\\end{longtable}")
+    lines.append("}")
+    return "\n".join(lines)
+
+
 def md_to_latex(text: str) -> str:
-    """Convert Markdown text to LaTeX body content."""
+    """Convert Markdown text to LaTeX body content.
+
+    Heading hierarchy is trusted from the Markdown source (set by LLM in P2 repair).
+    No content-specific rules here — pure mechanical mapping.
+    """
     lines = text.split("\n")
     output = []
 
     in_list = None
     in_table = False
     table_rows = []
+    in_author_section = False
+    author_lines_buf = []
 
     for line in lines:
         stripped = line.strip()
 
-        if re.match(r"^#{1,3}\s+", stripped):
+        if in_author_section:
+            if re.match(r"^#{1,6}\s+", stripped):
+                output.append(_format_author_table(author_lines_buf))
+                in_author_section = False
+                author_lines_buf = []
+            elif stripped:
+                author_lines_buf.append(stripped)
+                continue
+            else:
+                continue
+
+        if re.match(r"^#{1,6}\s+", stripped):
             if in_list:
                 output.append(f"\\end{{{in_list}}}")
                 in_list = None
             level = len(re.match(r"^(#+)", stripped).group(1))
             title = stripped.lstrip("#").strip()
-            cmds = {1: "\\chapter", 2: "\\section", 3: "\\subsection"}
-            output.append(f"{cmds.get(level, '\\subsubsection')}{{{title}}}")
+            cmd = HEADING_MAP.get(level, "\\subsubsection")
+            output.append(f"{cmd}{{{escape_latex(title)}}}")
+            if "执笔者介绍" in title or "執筆者紹介" in title:
+                in_author_section = True
+                author_lines_buf = []
             continue
 
         if stripped.startswith("|") and not in_table:
@@ -98,6 +151,8 @@ def md_to_latex(text: str) -> str:
         output.append(f"\\end{{{in_list}}}")
     if in_table:
         output.append(convert_table(table_rows))
+    if in_author_section and author_lines_buf:
+        output.append(_format_author_table(author_lines_buf))
 
     return "\n".join(output)
 
@@ -150,10 +205,10 @@ def inline_format(text: str) -> str:
     return text
 
 
-PREAMBLE = r"""\documentclass[12pt, a4paper, openright]{book}
-\usepackage{ctex}
+PREAMBLE = r"""\documentclass[12pt, a4paper, openany]{book}
+\usepackage[fontset=none]{ctex}
 \usepackage{geometry}
-\geometry{top=2.5cm, bottom=2.5cm, left=3cm, right=2.5cm}
+\geometry{top=2.5cm, bottom=2.5cm, left=2.5cm, right=2.5cm, headheight=15pt}
 \usepackage{fancyhdr}
 \usepackage{titlesec}
 \usepackage[hidelinks]{hyperref}
@@ -164,14 +219,32 @@ PREAMBLE = r"""\documentclass[12pt, a4paper, openright]{book}
 \usepackage{footmisc}
 \usepackage{enumitem}
 \usepackage{xcolor}
+\usepackage{fontspec}
+
+\setCJKmainfont{Noto Serif CJK SC}
+\setCJKsansfont{Noto Sans CJK SC}
+\setCJKmonofont{Noto Sans Mono CJK SC}
+\setmainfont{Noto Serif CJK SC}
 
 \pagestyle{fancy}
-\fancyhead[LE]{\leftmark}
-\fancyhead[RO]{\rightmark}
-\fancyfoot[C]{\thepage}
+\fancyhf{}
+\fancyhead[LE,RO]{\thepage}
+\fancyhead[RE]{\leftmark}
+\fancyhead[LO]{\rightmark}
+\renewcommand{\headrulewidth}{0.4pt}
+
+\titleformat{\chapter}[display]
+  {\normalfont\huge\bfseries}{}{0pt}{\Huge}
+\titlespacing*{\chapter}{0pt}{-20pt}{30pt}
+
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.3em}
+\linespread{1.5}
 
 \widowpenalty=10000
 \clubpenalty=10000
+\tolerance=1000
+\emergencystretch=3em
 """
 
 FRONTMATTER = r"""\begin{titlepage}

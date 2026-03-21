@@ -16,16 +16,35 @@ import zipfile
 
 import requests
 
-PIPELINE_ROOT = pathlib.Path(__file__).resolve().parent.parent
-SECRETS_PATH = PIPELINE_ROOT / "local.secrets.json"
+from book_translation_paths import resolve_workspace
+
+SECRETS_CANDIDATES = ("local.secrets.json", "secrets.json")
+
+
+def resolve_secrets_path() -> pathlib.Path | None:
+    root = resolve_workspace()
+    for name in SECRETS_CANDIDATES:
+        p = root / name
+        try:
+            if p.is_file():
+                return p
+        except OSError:
+            continue
+    return None
 
 
 def load_secrets():
-    if not SECRETS_PATH.exists():
-        print(f"Error: secrets file not found at {SECRETS_PATH}", file=sys.stderr)
-        print("Copy secrets.example.json to local.secrets.json and fill in your credentials.", file=sys.stderr)
+    path = resolve_secrets_path()
+    if path is None:
+        print(
+            "Error: no secrets file found. Create one of:",
+            file=sys.stderr,
+        )
+        for name in SECRETS_CANDIDATES:
+            print(f"  {resolve_workspace() / name}", file=sys.stderr)
+        print("Copy secrets.example.json and fill in MinerU token and API keys.", file=sys.stderr)
         sys.exit(1)
-    return json.loads(SECRETS_PATH.read_text())
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def poll_single_task(base_url: str, token: str, task_id: str, timeout: int) -> str | None:
@@ -111,7 +130,7 @@ def main():
     parser = argparse.ArgumentParser(description="Poll MinerU task and download results")
     parser.add_argument("task_id", help="task_id or batch_id to poll")
     parser.add_argument("--batch", action="store_true", help="Poll as batch task")
-    parser.add_argument("--output-dir", default="work/ocr", help="Directory to extract results")
+    parser.add_argument("--output-dir", default="work/p1_ocr", help="Directory to extract results")
     parser.add_argument("--timeout", type=int, default=1800, help="Max wait time in seconds")
     args = parser.parse_args()
 

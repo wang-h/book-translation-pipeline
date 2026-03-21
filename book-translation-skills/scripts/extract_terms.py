@@ -67,7 +67,7 @@ def process_chapter(filepath: pathlib.Path) -> dict[str, list[str]]:
 def main():
     parser = argparse.ArgumentParser(description="Extract terminology candidates from Markdown chapters")
     parser.add_argument("chapters_dir", help="Directory containing repaired chapter .md files")
-    parser.add_argument("--output", default="work/terminology/term_candidates.json", help="Output path")
+    parser.add_argument("--output", default="work/p3_terminology/term_candidates.json", help="Output path")
     parser.add_argument("--min-freq", type=int, default=2, help="Minimum frequency to include a term")
     args = parser.parse_args()
 

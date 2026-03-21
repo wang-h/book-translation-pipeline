@@ -1,57 +1,67 @@
 ---
 name: book-translation-pipeline
 description: >-
-  End-to-end book translation pipeline: PDF → OCR → Markdown repair →
-  terminology extraction → chapter-by-chapter translation → LaTeX typesetting
-  → PDF polish. Use when translating a book, processing a book PDF, or
-  running any stage of the book translation workflow.
+  End-to-end book translation pipeline: PDF → OCR → OCR post-processing
+  (missing-text supplement + Markdown repair) → terminology extraction →
+  chapter-by-chapter translation → LaTeX typesetting → PDF polish. Use when
+  translating a book, processing a book PDF, or running any stage of the
+  book translation workflow.
 ---
 
 # Book Translation Pipeline
 
 ## Overview
 
-This is the master orchestration skill for translating a full book from PDF to polished Chinese PDF. It coordinates 6 sub-skills in sequence. The user only needs to provide a PDF and say "翻译这本书".
+This is the master orchestration skill for translating a full book from PDF to polished Chinese PDF. It coordinates 6 stages. The user only needs to provide a PDF and say "翻译这本书".
 
-**Pipeline root:** `~/book-translation-pipeline`
+## Layout
 
-All sub-skill definitions live under `skills/`, helper scripts under `scripts/`, and shared conventions in `REFERENCE.md` — all relative to the pipeline root above.
+```
+book-translation-pipeline/
+├── workspace/                  # 工作目录（密钥、PDF、OCR产出、译稿等）
+└── book-translation-skills/    # 技能 + 脚本（可单独发布到 GitHub）
+```
+
+- **Skills + scripts:** `book-translation-skills/` — all `SKILL.md` definitions and `scripts/`.
+- **Workspace:** `workspace/` — `local.secrets.json`, `input/`, `work/`, `output/`, `config/`.
+- **Shared conventions:** `REFERENCE.md` at the pipeline root.
 
 ## Prerequisites
 
-1. `local.secrets.json` exists at the pipeline root with valid MinerU and OpenAI credentials (copy from `secrets.example.json`).
-2. XeLaTeX and ctex are installed for PDF compilation.
-3. Noto CJK fonts (or equivalent) are installed.
+1. `workspace/local.secrets.json` (or `workspace/secrets.json`) exists with valid MinerU and OpenAI credentials (copy from `secrets.example.json`).
+2. Python deps: `pip install -r book-translation-skills/requirements.txt`
+3. System deps (PDF compilation): `sudo apt install texlive-xetex texlive-latex-extra texlive-lang-chinese fonts-noto-cjk`
+4. Fallback PDF: WeasyPrint (`pip install weasyprint`) if XeLaTeX unavailable.
 
 ## Full Workflow
 
 When the user asks to translate a book, execute these stages in order. After each stage, confirm outputs before proceeding.
 
-### Stage 1: OCR — `skills/ocr-book-with-mineru-api/SKILL.md`
+### Stage 1: OCR — `book-translation-skills/ocr-book-with-mineru-api/SKILL.md`
 
 **Input:** PDF file
-**Output:** `work/ocr/full.md`, `work/ocr/content_list.json`, `work/ocr/images/`
+**Output:** `workspace/work/p1_ocr/full.md`, `workspace/work/p1_ocr/content_list.json`, `workspace/work/p1_ocr/images/`
 
-1. Place the PDF in `input/`.
+1. Place the PDF in `workspace/input/`.
 2. Read the sub-skill for detailed API steps.
 3. Submit to MinerU v4 cloud API, poll until done, download and unzip results.
-4. Generate `config/chapter_manifest.json` from detected headings.
+4. Generate `workspace/config/chapter_manifest.json` from detected headings.
 5. **Checkpoint:** Confirm `full.md` is non-empty and chapter headings look correct.
 
-### Stage 2: Markdown Repair — `skills/repair-book-markdown/SKILL.md`
+### Stage 2: OCR Post-Processing (Supplement + Repair)
 
-**Input:** `work/ocr/full.md`
-**Output:** `work/repaired/ch01.md`, `ch02.md`, ...
+**Input:** `workspace/work/p1_ocr/full.md`
+**Output:** `workspace/work/p2_repaired/ch01.md`, `ch02.md`, ...
 
-1. Split `full.md` into chunks using `scripts/split_book.py`.
-2. Call GPT-5.4 to fix OCR artifacts (broken paragraphs, wrong headings, garbled chars, etc.).
+1. Run targeted missing-text supplementation first when MinerU omissions are visible, using `book-translation-skills/supplement-ocr-missing/SKILL.md` (model configurable, fast model recommended).
+2. Run structural OCR cleanup using `book-translation-skills/repair-book-markdown/SKILL.md`.
 3. Do NOT translate — keep original language.
-4. **Checkpoint:** Chapter count matches manifest; heading hierarchy is consistent.
+4. **Checkpoint:** Chapter count matches manifest; heading hierarchy is consistent; missing-span patches are logged.
 
-### Stage 3: Terminology Extraction — `skills/extract-book-terminology/SKILL.md`
+### Stage 3: Terminology Extraction — `book-translation-skills/extract-book-terminology/SKILL.md`
 
-**Input:** `work/repaired/ch*.md`
-**Output:** `work/terminology/glossary.json`, `work/terminology/translation_memory.md`
+**Input:** `workspace/work/p2_repaired/ch*.md`
+**Output:** `workspace/work/p3_terminology/glossary.json`, `workspace/work/p3_terminology/translation_memory.md`
 
 1. Run `scripts/extract_terms.py` for a first-pass extraction of capitalized phrases, abbreviations, quoted terms.
 2. Call GPT-5.4 to classify and translate term candidates.
@@ -59,10 +69,10 @@ When the user asks to translate a book, execute these stages in order. After eac
 4. Freeze approved terms into `glossary.json`.
 5. **Checkpoint:** Glossary exists and has `status: "frozen"` entries.
 
-### Stage 4: Translation — `skills/translate-book-to-zh/SKILL.md`
+### Stage 4: Translation — `book-translation-skills/translate-book-to-zh/SKILL.md`
 
-**Input:** `work/repaired/ch*.md` + `work/terminology/glossary.json`
-**Output:** `work/translated/ch01.md`, `ch02.md`, ...
+**Input:** `workspace/work/p2_repaired/ch*.md` + `workspace/work/p3_terminology/glossary.json`
+**Output:** `workspace/work/p4_translated/ch01.md`, `ch02.md`, ...
 
 1. Load frozen glossary and inject into every translation prompt.
 2. Translate chapter by chapter, chunk by chunk, using GPT-5.4.
@@ -70,20 +80,27 @@ When the user asks to translate a book, execute these stages in order. After eac
 4. Record any new unregistered terms.
 5. **Checkpoint:** All chapters translated; paragraph count roughly matches source; no glossary violations.
 
-### Stage 5: LaTeX Typesetting — `skills/typeset-book-latex/SKILL.md`
+### Stage 5: PDF 生成 — `book-translation-skills/typeset-book-latex/SKILL.md`
 
-**Input:** `work/translated/ch*.md`
-**Output:** `output/latex/`, `output/pdf/book-draft.pdf`
+**Input:** `workspace/work/p4_translated/ch*.md`
+**Output:** `workspace/output/pdf/book.pdf`
+
+**方式 A — XeLaTeX（推荐）：**
 
 1. Run `scripts/build_latex.py` to convert Markdown → LaTeX.
 2. Generate `preamble.tex`, `frontmatter.tex`, `book.tex`, and `chapters/*.tex`.
 3. Compile twice with `xelatex`.
-4. **Checkpoint:** `book-draft.pdf` exists; no critical compilation errors.
+4. **Checkpoint:** `book.pdf` exists; no critical compilation errors.
 
-### Stage 6: PDF Polish — `skills/polish-book-pdf/SKILL.md`
+**方式 B — WeasyPrint（备选，无需 LaTeX）：**
 
-**Input:** `output/pdf/book-draft.pdf` + `output/latex/`
-**Output:** `output/pdf/book-final.pdf`
+1. Run `scripts/md_to_pdf.py work/p4_translated/ch01.md --output output/pdf/book.pdf --title "书名"`.
+2. **Checkpoint:** `book.pdf` exists and页面排版正常。
+
+### Stage 6: PDF Polish — `book-translation-skills/polish-book-pdf/SKILL.md`
+
+**Input:** `workspace/output/pdf/book-draft.pdf` + `workspace/output/latex/`
+**Output:** `workspace/output/pdf/book-final.pdf`
 
 1. Run `scripts/pdf_layout_check.py` for automated checks.
 2. Fix layout issues: widows/orphans, footnote overflow, float problems, CJK spacing.
@@ -93,11 +110,10 @@ When the user asks to translate a book, execute these stages in order. After eac
 
 ## Partial Runs
 
-The user may request a single stage. Match their request to the right stage:
-
 | User says | Stage |
 |-----------|-------|
 | "OCR 这本书" / "识别这个 PDF" | Stage 1 |
+| "MinerU 漏识别了" / "补 OCR 缺字缺段" / "补识别" | Stage 2 |
 | "修复 Markdown" / "清理 OCR 结果" | Stage 2 |
 | "提取术语" / "做术语表" | Stage 3 |
 | "翻译这本书" / "翻译第X章" | Stage 4 (assumes 1-3 done) |
@@ -105,19 +121,36 @@ The user may request a single stage. Match their request to the right stage:
 | "优化版面" / "精修 PDF" | Stage 6 (assumes 1-5 done) |
 | "翻译这本书"（从 PDF 开始） | Full pipeline 1-6 |
 
-## Working Directory
+## Running Scripts
 
-All stages operate relative to a **book project directory** (the user's current workspace or a specified path). The pipeline root (`~/book-translation-pipeline`) holds skill definitions and scripts; actual book data lives in the book project directory.
-
-When starting a new book, create the standard directory structure:
+All scripts live in `book-translation-skills/scripts/`. Run from `workspace/`:
 
 ```bash
-mkdir -p input work/{ocr,repaired,terminology,translated} output/{latex,pdf} config
+cd ~/book-translation-pipeline/workspace
+python ../book-translation-skills/scripts/mineru_submit.py input/book.pdf --ocr
 ```
+
+Scripts auto-detect `workspace/` by looking for `local.secrets.json` upward from cwd. You can also set `BOOK_TRANSLATION_WORKSPACE` explicitly.
+
+### Available Scripts
+
+| Script | Phase | Description |
+|--------|-------|-------------|
+| `mineru_submit.py` | P1 | Submit PDF to MinerU OCR |
+| `mineru_poll.py` | P1 | Poll OCR status + download results |
+| `generate_chapter_manifest.py` | P1 | Generate chapter manifest from headings |
+| `split_md_paragraphs.py` | P2/P4 | Split Markdown into char-limited chunks |
+| `split_book.py` | P2 | Split by headings into chapters |
+| `openai_repair_md.py` | P2 | LLM-based OCR repair |
+| `extract_terms.py` | P3 | Extract terminology candidates |
+| `openai_translate_md.py` | P4 | LLM-based translation (JP→ZH) |
+| `build_latex.py` | P5 | Markdown → LaTeX project |
+| `md_to_pdf.py` | P5 | Markdown → PDF via WeasyPrint |
+| `pdf_layout_check.py` | P6 | PDF layout QA checks |
 
 ## Error Recovery
 
-- Each stage is independently resumable — check `config/chapter_manifest.json` for per-chapter status.
+- Each stage is independently resumable — check `workspace/config/chapter_manifest.json` for per-chapter status.
 - Failed chunks can be retried individually without rerunning the full stage.
 - See `REFERENCE.md` for the complete failure recovery table.
 
@@ -126,4 +159,4 @@ mkdir -p input work/{ocr,repaired,terminology,translated} output/{latex,pdf} con
 1. **Never skip Stage 3** (terminology) before Stage 4 (translation). Glossary consistency is non-negotiable.
 2. **Always read the sub-skill SKILL.md** before executing a stage — it has detailed prompts and constraints.
 3. **Checkpoint after every stage** — don't blindly chain all 6 stages without user confirmation.
-4. **Secrets** are at the pipeline root: `~/book-translation-pipeline/local.secrets.json`.
+4. **Secrets** are at `workspace/local.secrets.json`.

@@ -25,8 +25,8 @@ For shared conventions, see [REFERENCE.md](../../REFERENCE.md).
 
 ## Input
 
-- `work/ocr/full.md` — raw MinerU Markdown.
-- `work/ocr/content_list.json` — structural reference for ambiguous cases.
+- `work/p1_ocr/full.md` — raw MinerU Markdown.
+- `work/p1_ocr/content_list.json` — structural reference for ambiguous cases.
 - `config/chapter_manifest.json` — expected chapter list.
 
 ## Repair Targets
@@ -73,12 +73,12 @@ Return the repaired Markdown only. No explanations.
 
 ### Step 4: Reassemble and validate
 
-- Concatenate repaired chunks back into per-chapter files under `work/repaired/`.
+- Concatenate repaired chunks back into per-chapter files under `work/p2_repaired/`.
 - Validate: chapter count matches manifest; heading hierarchy is consistent; footnote count matches raw input.
 
 ## Output
 
-- `work/repaired/ch01.md`, `work/repaired/ch02.md`, ... — one file per chapter.
+- `work/p2_repaired/ch01.md`, `work/p2_repaired/ch02.md`, ... — one file per chapter.
 - Updated `config/chapter_manifest.json` with `repair_status: "done"` per chapter.
 
 ## Error Handling

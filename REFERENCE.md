@@ -10,10 +10,13 @@
 <project_root>/
 ├── input/                      # 原始 PDF
 ├── work/
-│   ├── ocr/                    # MinerU 产出（full.md、content_list.json、images/）
-│   ├── repaired/               # OCR 修复后的 Markdown（按章节）
-│   ├── terminology/            # glossary.json、term_candidates.json、translation_memory.md
-│   └── translated/             # 中文译稿 Markdown（按章节）
+│   ├── p1_ocr/                 # MinerU 产出（full.md、content_list.json、images/）
+│   ├── p2_repair_chunks/       # 修复阶段临时分块（可选）
+│   ├── p2_repaired/            # OCR 修复后的 Markdown（按章节）
+│   ├── p3_terminology/         # glossary.json、term_candidates.json、translation_memory.md
+│   ├── p4_translate_chunks/    # 翻译阶段临时分块（可选）
+│   ├── p4_translated/          # 中文译稿 Markdown（按章节）
+│   └── p5_supplemented/        # 视觉补漏产出（历史/可选；阶段已弃用）
 ├── output/
 │   ├── latex/                  # book.tex、chapters/*.tex、preamble.tex
 │   └── pdf/                    # 最终 PDF
@@ -42,9 +45,9 @@
 
 | 资产文件 | 位置 | 用途 |
 |---------|------|------|
-| `glossary.json` | `work/terminology/` | 冻结版术语表，翻译阶段必须读取 |
-| `term_candidates.json` | `work/terminology/` | 术语候选（未冻结），供人工审核 |
-| `translation_memory.md` | `work/terminology/` | 人工可读的术语记忆，含上下文示例 |
+| `glossary.json` | `work/p3_terminology/` | 冻结版术语表，翻译阶段必须读取 |
+| `term_candidates.json` | `work/p3_terminology/` | 术语候选（未冻结），供人工审核 |
+| `translation_memory.md` | `work/p3_terminology/` | 人工可读的术语记忆，含上下文示例 |
 | `chapter_manifest.json` | `config/` | 章节清单：编号、标题、页码范围、状态 |
 
 ### glossary.json 条目格式
