@@ -1,0 +1,34 @@
+local.secrets.json
+
+# Runtime working directories
+work/
+output/
+input/
+config/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+
+# LaTeX
+*.aux
+*.log
+*.toc
+*.out
+*.synctex.gz
+*.fls
+*.fdb_latexmk
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
