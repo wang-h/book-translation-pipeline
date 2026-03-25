@@ -1,8 +1,15 @@
-"""Split a Markdown file into fixed-size paragraph-safe chunks (no heading-based fragmentation).
+"""Split a Markdown file into paragraph-level entries with stable IDs.
 
 Usage:
-    python split_md_paragraphs.py <input.md> --output-dir work/p2_repair_chunks --max-chars 12000
+    python split_md_paragraphs.py <input.md> --output-dir work/p4_translate_chunks --batch-chars 10000
+
+Outputs:
+    entries.json          – full list: [{"id": 0, "text": "..."}, ...]
+    batch_0000.json       – batched subsets for API calls
+    batch_manifest.json   – batch index
 """
+
+from __future__ import annotations
 
 import argparse
 import json
@@ -17,29 +24,33 @@ def paragraph_blocks(text: str) -> list[str]:
     return [p.strip() for p in parts if p.strip()]
 
 
-def merge_to_chunks(blocks: list[str], max_chars: int) -> list[str]:
-    chunks: list[str] = []
-    current: list[str] = []
+def build_entries(blocks: list[str]) -> list[dict]:
+    return [{"id": i, "text": b} for i, b in enumerate(blocks)]
+
+
+def batch_entries(entries: list[dict], max_chars: int) -> list[list[dict]]:
+    batches: list[list[dict]] = []
+    current: list[dict] = []
     size = 0
-    for b in blocks:
-        blen = len(b) + 2
-        if current and size + blen > max_chars:
-            chunks.append("\n\n".join(current))
-            current = [b]
-            size = blen
+    for e in entries:
+        elen = len(e["text"]) + 20
+        if current and size + elen > max_chars:
+            batches.append(current)
+            current = [e]
+            size = elen
         else:
-            current.append(b)
-            size += blen
+            current.append(e)
+            size += elen
     if current:
-        chunks.append("\n\n".join(current))
-    return chunks
+        batches.append(current)
+    return batches
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Split MD into char-limited paragraph chunks")
+    parser = argparse.ArgumentParser(description="Split MD into paragraph entries with IDs")
     parser.add_argument("input_file", help="Source Markdown")
-    parser.add_argument("--output-dir", required=True, help="Directory for chunk_000.md ...")
-    parser.add_argument("--max-chars", type=int, default=12000, help="Max characters per chunk")
+    parser.add_argument("--output-dir", required=True, help="Output directory")
+    parser.add_argument("--batch-chars", type=int, default=10000, help="Max chars per batch")
     args = parser.parse_args()
 
     inp = pathlib.Path(args.input_file)
@@ -49,22 +60,36 @@ def main():
 
     text = inp.read_text(encoding="utf-8")
     blocks = paragraph_blocks(text)
-    chunks = merge_to_chunks(blocks, args.max_chars)
+    entries = build_entries(blocks)
+    batches = batch_entries(entries, args.batch_chars)
 
     out_dir = pathlib.Path(args.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    manifest = []
-    for i, ch in enumerate(chunks):
-        name = f"chunk_{i:04d}.md"
-        (out_dir / name).write_text(ch + "\n", encoding="utf-8")
-        manifest.append({"chunk_id": name, "chars": len(ch)})
-
-    (out_dir / "paragraph_chunk_manifest.json").write_text(
-        json.dumps(manifest, indent=2, ensure_ascii=False) + "\n",
-        encoding="utf-8",
+    (out_dir / "entries.json").write_text(
+        json.dumps(entries, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
     )
-    print(f"Wrote {len(chunks)} chunks to {out_dir}", file=sys.stderr)
+
+    manifest = []
+    for i, batch in enumerate(batches):
+        name = f"batch_{i:04d}.json"
+        (out_dir / name).write_text(
+            json.dumps(batch, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+        )
+        manifest.append({
+            "batch_file": name,
+            "entry_count": len(batch),
+            "entry_ids": [e["id"] for e in batch],
+            "chars": sum(len(e["text"]) for e in batch),
+        })
+
+    (out_dir / "batch_manifest.json").write_text(
+        json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+    )
+    print(
+        f"Wrote {len(entries)} entries in {len(batches)} batches to {out_dir}",
+        file=sys.stderr,
+    )
 
 
 if __name__ == "__main__":

@@ -1,91 +1,93 @@
 ---
 name: extract-book-terminology
 description: >-
-  Extract and freeze a glossary of key terms, proper nouns, abbreviations,
-  institution names, person names, and fixed phrases from a repaired book
-  Markdown before translation begins. Use when extracting terminology, building
-  a glossary, or preparing a translation memory for book translation.
+  Extract and freeze a glossary of key terms from a repaired book Markdown
+  before translation begins. Uses LLM to understand text semantics and identify
+  terms that need consistent translation — law names, institutions, roles,
+  abbreviations, proper nouns, fixed legal phrases, etc.
 ---
 
 # Extract Book Terminology
 
 ## Overview
 
-This skill scans the entire repaired Markdown of a book and produces a frozen glossary (`glossary.json`) and a human-readable translation memory (`translation_memory.md`). These assets must be created **before** translation begins to ensure term consistency across all chapters.
+This skill uses an LLM to read repaired Markdown and extract terms that require consistent translation. The output is a frozen `glossary.json` used by P4. It supports configurable language pairs.
 
-For shared conventions, see [REFERENCE.md](../../REFERENCE.md).
+**Core principle:** Let the LLM understand the text and identify terms — don't rely on regex patterns.
 
 ## Hard Constraints
 
 - **Must run before translation.** The `translate-book-to-zh` skill requires `glossary.json` as input.
-- **One term, one preferred translation.** Every entry must have exactly one `preferred_translation`.
-- **Forbidden translations must be listed.** Common mistranslations should be explicitly blocked.
-- **Retain original form.** For important terms, mark `retain_original: true` so translators parenthetically include the English original on first use.
+- **One term, one preferred translation.** Every entry should map one `source` to one `target`.
+- **LLM-driven extraction.** The script sends text chunks to the LLM and asks it to identify terms worth freezing.
 
 ## Input
 
-- `work/repaired/ch*.md` — all repaired chapter files.
-- `config/chapter_manifest.json` — chapter metadata.
+- `workspace/work/p2_repaired/*.md` — repaired Markdown (one file or multiple chapters).
 
 ## Workflow
 
-### Step 1: Collect term candidates
+### Step 1: Split text into chunks and send to LLM
 
-Use `scripts/extract_terms.py` to do a first pass:
-1. Extract all capitalized multi-word phrases, abbreviations, quoted terms, and italicized terms.
-2. Count frequency across chapters.
-3. Group variants (e.g., "Due Process" / "due process" / "DUE PROCESS").
-4. Output `work/terminology/term_candidates.json`.
+Run `scripts/extract_terms.py`:
 
-### Step 2: Classify and translate candidates with GPT-5.4
-
-For each batch of candidates (50-100 terms), call GPT-5.4:
-
-```
-You are a professional translator and terminologist. Given the following list
-of English terms extracted from a book about [BOOK_SUBJECT], provide for each:
-
-1. preferred_translation: The best Chinese translation.
-2. alternatives: Other acceptable translations (array).
-3. forbidden_translations: Common mistranslations to avoid (array).
-4. part_of_speech_or_type: One of "legal_term", "person_name",
-   "institution", "abbreviation", "book_title", "concept", "other".
-5. retain_original: true if the English should appear in parentheses on
-   first use.
-6. notes: Any usage guidance.
-
-Return JSON array. No explanations outside the JSON.
+```bash
+cd workspace
+python ../book-translation-skills/scripts/extract_terms.py work/p2_repaired \
+  --output work/p3_terminology/glossary.json \
+  --source-lang ja \
+  --target-lang zh-CN
 ```
 
-Include 2-3 chapter context sentences for each term to improve translation quality.
+Default model: `gpt-5.4-mini` (fast, accurate enough for term extraction; override with `--model`).
 
-### Step 3: Human review checkpoint
+The script:
+1. Reads all `.md` files in the input directory.
+2. Splits the combined text into chunks (~8000 chars each).
+3. Sends each chunk to the LLM with a prompt asking it to extract terms that need consistent translation.
+4. The LLM returns structured JSON with: source term, recommended Chinese translation, term type, and notes.
+5. Merges results across all chunks: deduplicates, picks the most common translation for each term, aggregates frequency.
 
-Output `work/terminology/term_candidates.json` with `status: "candidate"` for all entries. The user may review and override translations before freezing.
+### Step 2: Human review (optional)
 
-### Step 4: Freeze glossary
+The script outputs the glossary directly. The user may review and edit `glossary.json` before proceeding to P4.
 
-After review (or immediately if user opts to skip review):
-- Copy approved entries to `work/terminology/glossary.json` with `status: "frozen"`.
-- Generate `work/terminology/translation_memory.md` — a human-readable table:
+If the user wants to skip review, proceed directly to P4.
 
-```markdown
-| English Term | Chinese Translation | Type | Notes |
-|-------------|--------------------|----- |-------|
-| due process | 正当程序 | legal_term | 首次出现括注英文 |
-```
+### Step 3: Use in translation
+
+P4's `openai_translate_md.py` reads `glossary.json` and injects the term table into every translation prompt.
 
 ## Output
 
-- `work/terminology/term_candidates.json` — full candidate list with frequencies and chapter sources.
-- `work/terminology/glossary.json` — frozen glossary for translation.
-- `work/terminology/translation_memory.md` — human-readable reference.
+- `workspace/work/p3_terminology/glossary.json` — frozen glossary for translation.
 
-## glossary.json Entry Format
+## glossary.json Format
 
-See [REFERENCE.md](../../REFERENCE.md) for the canonical entry schema.
+```json
+{
+  "meta": {
+    "source_lang": "ja",
+    "target_lang": "zh-CN",
+    "status": "frozen",
+    "book": "書名"
+  },
+  "terms": [
+    {
+      "source": "教育基本法",
+      "target": "教育基本法",
+      "type": "law_name",
+      "notes": ""
+    }
+  ]
+}
+```
+
+Backward compatibility: legacy fields `ja` / `zh` are still readable.
+
+Term types: `law_name`, `institution`, `role`, `abbreviation`, `person_name`, `concept`, `legal_phrase`, `other`.
 
 ## Error Handling
 
-- If GPT returns malformed JSON for a batch, retry that batch only.
-- If a term has conflicting translations across batches, flag it as `status: "conflict"` for human resolution.
+- If LLM returns malformed JSON for a chunk, retry that chunk (up to 3 times).
+- If a term appears in multiple chunks with different translations, pick the most frequent one and log the conflict.

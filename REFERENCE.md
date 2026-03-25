@@ -13,6 +13,7 @@
 │   ├── p1_ocr/                 # MinerU 产出（full.md、content_list.json、images/）
 │   ├── p2_repair_chunks/       # 修复阶段临时分块（可选）
 │   ├── p2_repaired/            # OCR 修复后的 Markdown（按章节）
+│   ├── p3_toc/                 # 目录重构结果（chapter_structure.json、toc.md）
 │   ├── p3_terminology/         # glossary.json、term_candidates.json、translation_memory.md
 │   ├── p4_translate_chunks/    # 翻译阶段临时分块（可选）
 │   ├── p4_translated/          # 中文译稿 Markdown（按章节）
@@ -54,8 +55,8 @@
 
 ```json
 {
-  "source_term": "due process",
-  "preferred_translation": "正当程序",
+  "source": "due process",
+  "target": "正当程序",
   "alternatives": ["正当法律程序"],
   "forbidden_translations": ["适当程序"],
   "part_of_speech_or_type": "法律术语",
@@ -67,6 +68,8 @@
   "status": "frozen"
 }
 ```
+
+兼容旧字段：`source_term` / `preferred_translation` / `ja` / `zh` 仍可读取，但新产物建议统一为 `source` / `target`。
 
 ## 质量检查清单
 

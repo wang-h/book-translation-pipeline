@@ -74,7 +74,7 @@ def load_openai_cfg():
     oa = data.get("openai") or {}
     base = (oa.get("base_url") or "https://api.openai.com/v1").rstrip("/")
     key = oa.get("api_key")
-    model = oa.get("model") or "gpt-4o"
+    model = oa.get("model") or "gpt-5.4-mini"
     if not key:
         print("openai.api_key missing in secrets", file=sys.stderr)
         sys.exit(1)

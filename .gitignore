@@ -1,10 +1,19 @@
 local.secrets.json
+workspace/local.secrets.json
+workspace/secrets.json
 
 # Runtime working directories
 work/
 output/
 input/
 config/
+workspace/work/
+workspace/output/
+workspace/input/
+workspace/config/
+workspace/**/*.progress.json
+workspace/**/*.tmp
+workspace/**/*.cache
 
 # Python
 __pycache__/
@@ -34,3 +43,4 @@ Thumbs.db
 .idea/
 
 secrets.json
+*.pdf

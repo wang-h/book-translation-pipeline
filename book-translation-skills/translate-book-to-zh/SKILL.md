@@ -1,32 +1,35 @@
 ---
 name: translate-book-to-zh
 description: >-
-  Translate a full book from its source language to Chinese, chapter by chapter,
-  using a frozen glossary to ensure terminology consistency. Use when translating
-  an entire book, performing chapter-by-chapter translation, or applying a
-  glossary-constrained translation workflow.
+  Translate a full book with configurable language pairs (not only JA→ZH),
+  chapter by chapter, using a frozen glossary to ensure terminology consistency.
+  Supports legal and general modes.
 ---
 
-# Translate Book to Chinese
+# Translate Book (Flexible Language Pairs)
 
 ## Overview
 
-This skill translates repaired source-language Markdown into Chinese, chapter by chapter, enforcing the frozen glossary produced by `extract-book-terminology`. It uses GPT-5.4 via the aihubmix OpenAI-compatible API.
+This skill translates repaired Markdown with configurable source/target language
+codes, enforcing the frozen glossary produced by `extract-book-terminology`.
+Default model is `gemini-3.1-pro-preview` via an OpenAI-compatible API.
 
 For shared conventions, see [REFERENCE.md](../../REFERENCE.md).
 
 ## Hard Constraints
 
-- **Glossary is mandatory.** Before translating any chunk, load `work/terminology/glossary.json` and inject all frozen terms into the system prompt.
+- **Glossary is mandatory.** Before translating any chunk, load `work/p3_terminology/glossary.json` and inject all frozen terms into the system prompt.
 - **Preserve structure.** Heading levels, footnote order, list hierarchy, table layout, and formula placeholders must survive translation intact.
+- **Configurable language pair.** Use `--source-lang` and `--target-lang`.
+- **Legal originals retained (optional).** In legal mode, keep source + target together using `:::law-bilingual`.
 - **No paragraph merging.** Each source paragraph maps to one translated paragraph.
 - **Retain original on first use.** For terms with `retain_original: true`, parenthetically include the English on its first appearance per chapter.
 - **Unregistered terms.** If translation encounters a significant term not in the glossary, record it in `term_candidates.json` with `status: "new"` and use the best available translation for now. Do NOT stop the workflow.
 
 ## Input
 
-- `work/repaired/ch*.md` — repaired source-language chapters.
-- `work/terminology/glossary.json` — frozen glossary.
+- `work/p2_repaired/ch*.md` or `work/p2_repaired/full_repaired.md` — repaired source-language markdown.
+- `work/p3_terminology/glossary.json` — frozen glossary.
 - `config/chapter_manifest.json` — chapter metadata.
 
 ## Workflow
@@ -37,7 +40,7 @@ For shared conventions, see [REFERENCE.md](../../REFERENCE.md).
 import json, pathlib
 
 secrets = json.loads(pathlib.Path("local.secrets.json").read_text())
-glossary = json.loads(pathlib.Path("work/terminology/glossary.json").read_text())
+glossary = json.loads(pathlib.Path("work/p3_terminology/glossary.json").read_text())
 ```
 
 ### Step 2: Build glossary prompt segment
@@ -54,29 +57,27 @@ Format frozen terms into a compact table for the system prompt:
 You MUST use these exact translations. Do NOT deviate.
 ```
 
-### Step 3: Translate chapter by chapter
+### Step 3: Translate chapter by chapter (structured JSON workflow)
 
-For each chapter, split into chunks (3000-4000 tokens) using `scripts/split_book.py`.
-
-For each chunk, call GPT-5.4 with:
-
+1. Split chapter markdown into paragraph entries + batches:
+```bash
+python ../book-translation-skills/scripts/split_md_paragraphs.py \
+  work/p2_repaired/ch01.md \
+  --output-dir work/p4_translate_chunks_v2 \
+  --batch-chars 10000
 ```
-System: You are a professional book translator. Translate the following text
-into Chinese. Follow these rules strictly:
-1. Use the mandatory terminology table above — no deviations.
-2. Preserve all Markdown structure: headings, footnotes, lists, tables, formulas.
-3. Each source paragraph = one translated paragraph.
-4. For terms marked "retain_original", include English in parentheses on first
-   use in this chapter.
-5. Use 「」for book titles, "" for quotes, maintain Chinese punctuation throughout.
-6. Do not add, remove, or reorder content.
-
-{glossary_prompt_segment}
-
-User: {chunk_text}
+2. Run translation:
+```bash
+python ../book-translation-skills/scripts/openai_translate_md.py \
+  --entries-dir work/p4_translate_chunks_v2 \
+  --output-dir work/p4_translated \
+  --glossary work/p3_terminology/glossary.json \
+  --source-lang ja \
+  --target-lang zh-CN \
+  --domain legal \
+  --law-bilingual
 ```
-
-Include a brief context summary from the previous chunk to maintain coherence across chunk boundaries.
+3. For non-legal books, use `--domain general --no-law-bilingual`.
 
 ### Step 4: Post-translation consistency check
 
@@ -92,9 +93,11 @@ Collect all terms recorded as `status: "new"` in `term_candidates.json`. Present
 
 ## Output
 
-- `work/translated/ch01.md`, `work/translated/ch02.md`, ... — one file per chapter.
+- `work/p4_translated/ch01.md` (assembled markdown from translated entries)
+- `work/p4_translated/translated.json` (entry-level translation result)
+- `work/p4_translated/progress.json` (batch progress)
 - Updated `config/chapter_manifest.json` with `translation_status: "done"` per chapter.
-- Updated `work/terminology/term_candidates.json` with any new terms found during translation.
+- Updated `work/p3_terminology/term_candidates.json` with any new terms found during translation.
 
 ## Error Handling
 

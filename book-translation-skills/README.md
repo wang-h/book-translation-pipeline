@@ -11,6 +11,7 @@ book-translation-skills/
 ├── ocr-book-with-mineru-api/   # Stage 1
 ├── supplement-ocr-missing/     # Stage 2a
 ├── repair-book-markdown/       # Stage 2b
+├── restructure-book-toc/       # Stage 2.5
 ├── extract-book-terminology/   # Stage 3
 ├── translate-book-to-zh/       # Stage 4
 ├── typeset-book-latex/         # Stage 5
