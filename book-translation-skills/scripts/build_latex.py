@@ -21,6 +21,42 @@ HEADING_MAP = {
     4: "\\subsubsection",
 }
 
+KANJI_DIGITS = {"0": "零", "1": "一", "2": "二", "3": "三", "4": "四", "5": "五", "6": "六", "7": "七", "8": "八", "9": "九"}
+
+
+def _int_to_kanji(num: int) -> str:
+    if num == 0:
+        return "零"
+    units = ["", "十", "百", "千", "万"]
+    s = str(num)
+    out = []
+    length = len(s)
+    for i, ch in enumerate(s):
+        d = int(ch)
+        pos = length - i - 1
+        if d == 0:
+            continue
+        # 10~19 => "十X" (not "一十X")
+        if d == 1 and pos > 0 and not out:
+            out.append(units[pos])
+        else:
+            out.append(KANJI_DIGITS[ch] + units[pos])
+    return "".join(out)
+
+
+def normalize_legal_numbering_prefix(text: str) -> str:
+    """Normalize leading '第5章/第12条' to kanji numbers: '第五章/第十二条'."""
+    def repl(m: re.Match) -> str:
+        raw_num = m.group(1).translate(str.maketrans("０１２３４５６７８９", "0123456789"))
+        unit = m.group(2)
+        try:
+            n = int(raw_num)
+        except ValueError:
+            return m.group(0)
+        return f"第{_int_to_kanji(n)}{unit}"
+
+    return re.sub(r"^第\s*([0-9０-９]+)\s*([章节条])", repl, text)
+
 
 def _format_author_table(author_lines: list[str]) -> str:
     """Format author introduction lines as a two-column longtable."""
@@ -74,6 +110,30 @@ def md_to_latex(text: str) -> str:
     No content-specific rules here — pure mechanical mapping.
     """
     lines = text.split("\n")
+    # Merge standalone legal article markers ("第九条") with the next text line,
+    # so they can be formatted as "\textbf{第九条} ..." consistently.
+    merged_lines: list[str] = []
+    article_only = re.compile(r"^第\s*[0-9０-９〇零一二三四五六七八九十百千万两]+\s*条$")
+    i = 0
+    while i < len(lines):
+        cur = lines[i]
+        cur_s = normalize_legal_numbering_prefix(cur.strip())
+        if article_only.match(cur_s):
+            j = i + 1
+            while j < len(lines) and not lines[j].strip():
+                j += 1
+            if j < len(lines):
+                nxt = lines[j].strip()
+                if not re.match(r"^#{1,6}\s+", nxt) and not nxt.startswith("|") and not re.match(r"^[-*]\s+|^\d+\.\s+", nxt):
+                    merged_lines.append(f"{cur_s} {lines[j].lstrip()}")
+                    i = j + 1
+                    continue
+            merged_lines.append(cur)
+            i += 1
+            continue
+        merged_lines.append(cur)
+        i += 1
+    lines = merged_lines
     output = []
 
     in_list = None
@@ -92,9 +152,18 @@ def md_to_latex(text: str) -> str:
     # "目录型行"：一行内出现多个法条+页码（例如“第1条…79 第2条…80”）。
     # 这些行应视为目录内容而非正文，避免 PDF 看起来像“只有章节没有正文”。
     toc_like_line = re.compile(r"(第\s*\d+\s*条.{0,30}\d{1,4}){2,}")
+    chapter_like_bold = re.compile(r"^第\s*[0-9０-９一二三四五六七八九十百千万两]+\s*章\b")
+    section_like_bold = re.compile(r"^第\s*[0-9０-９一二三四五六七八九十百千万两]+\s*节\b")
 
     for line in lines:
         stripped = line.strip()
+        bold_wrapped = False
+        plain_stripped = stripped
+        # Some DOCX-derived markdown uses "**第一章 ...**" instead of "# 第一章 ...".
+        # Promote those lines to structural headings so TOC can be generated.
+        if stripped.startswith("**") and stripped.endswith("**") and len(stripped) > 4:
+            bold_wrapped = True
+            plain_stripped = stripped[2:-2].strip()
 
         if stripped == ":::law-bilingual":
             in_law_bilingual = True
@@ -143,6 +212,7 @@ def md_to_latex(text: str) -> str:
             if prev_heading_level > 0 and level > prev_heading_level + 1:
                 level = prev_heading_level + 1
             title = stripped.lstrip("#").strip()
+            title = normalize_legal_numbering_prefix(title)
 
             # Enter/leave source TOC section (目次/目录). We keep the heading, skip its body lines.
             if in_toc_section:
@@ -161,6 +231,24 @@ def md_to_latex(text: str) -> str:
             if "执笔者介绍" in title or "執筆者紹介" in title:
                 in_author_section = True
                 author_lines_buf = []
+            continue
+
+        if bold_wrapped and chapter_like_bold.match(plain_stripped):
+            if in_list:
+                output.append(f"\\end{{{in_list}}}")
+                in_list = None
+            plain_stripped = normalize_legal_numbering_prefix(plain_stripped)
+            output.append(f"\\chapter{{{escape_latex(plain_stripped)}}}")
+            prev_heading_level = 1
+            continue
+
+        if bold_wrapped and section_like_bold.match(plain_stripped):
+            if in_list:
+                output.append(f"\\end{{{in_list}}}")
+                in_list = None
+            plain_stripped = normalize_legal_numbering_prefix(plain_stripped)
+            output.append(f"\\section{{{escape_latex(plain_stripped)}}}")
+            prev_heading_level = 2
             continue
 
         if stripped.startswith("|") and not in_table:
@@ -279,6 +367,19 @@ def escape_latex(text: str) -> str:
 
 def inline_format(text: str) -> str:
     """Convert Markdown inline formatting to LaTeX."""
+    text = normalize_legal_numbering_prefix(text)
+    # Emphasize legal article lead-ins like "第一条 ...":
+    # force bold on "第X条" and keep one space after it for readability.
+    text = re.sub(
+        r"^(第\s*[0-9０-９〇零一二三四五六七八九十百千万两]+\s*条)\s*(?=\S)",
+        r"\\textbf{\1} ",
+        text,
+    )
+    text = re.sub(
+        r"^(第\s*[0-9０-９〇零一二三四五六七八九十百千万两]+\s*条)\s*$",
+        r"\\textbf{\1}",
+        text,
+    )
     text = re.sub(r"\*\*(.+?)\*\*", r"\\textbf{\1}", text)
     text = re.sub(r"\*(.+?)\*", r"\\textit{\1}", text)
     text = re.sub(r"`(.+?)`", r"\\texttt{\1}", text)
@@ -442,6 +543,24 @@ def build_glossary_appendix(glossary_path: pathlib.Path) -> str:
     return "\n".join(lines)
 
 
+def infer_title_from_markdown(md_text: str) -> str | None:
+    """Infer book title from chapter markdown (prefer first bold heading-like line)."""
+    for raw in md_text.splitlines():
+        s = raw.strip()
+        if not s:
+            continue
+        m = re.match(r"^\*\*(.+?)\*\*$", s)
+        if m:
+            title = m.group(1).strip()
+            if title and not title.startswith("（") and "目 次" not in title and "目录" not in title and "目次" not in title:
+                return title
+        if s.startswith("#"):
+            title = s.lstrip("#").strip()
+            if title and "目录" not in title and "目次" not in title:
+                return title
+    return None
+
+
 FRONTMATTER = r"""\begin{titlepage}
 \centering
 \vspace*{3cm}
@@ -459,7 +578,7 @@ def main():
     parser.add_argument("translated_dir", help="Directory with translated ch*.md files")
     parser.add_argument("--output-dir", default="output/latex", help="Output LaTeX project directory")
     parser.add_argument("--manifest", default="config/chapter_manifest.json", help="Chapter manifest")
-    parser.add_argument("--title", default="Book Title", help="Book title for cover page")
+    parser.add_argument("--title", default="", help="Book title for cover page (empty = auto infer)")
     parser.add_argument("--images-dir", default=None, help="Path to images directory (copied into output for Overleaf)")
     parser.add_argument("--glossary", default=None, help="Path to glossary.json for terminology appendix")
     args = parser.parse_args()
@@ -476,7 +595,14 @@ def main():
 
     (output_dir / "preamble.tex").write_text(PREAMBLE, encoding="utf-8")
 
-    frontmatter = FRONTMATTER.replace("BOOK_TITLE", args.title)
+    inferred_title = None
+    first_md_text = md_files[0].read_text(encoding="utf-8")
+    inferred_title = infer_title_from_markdown(first_md_text)
+    final_title = args.title.strip() if args.title else ""
+    if not final_title:
+        final_title = inferred_title or "Book Title"
+
+    frontmatter = FRONTMATTER.replace("BOOK_TITLE", final_title)
     (output_dir / "frontmatter.tex").write_text(frontmatter, encoding="utf-8")
 
     # Overleaf needs .latexmkrc to select XeLaTeX

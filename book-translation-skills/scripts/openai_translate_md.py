@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import json
 import pathlib
+import re
 import sys
 import time
 
@@ -108,6 +109,47 @@ def _lang_label(lang: str) -> str:
     return lang
 
 
+KANJI_DIGITS = {"0": "零", "1": "一", "2": "二", "3": "三", "4": "四", "5": "五", "6": "六", "7": "七", "8": "八", "9": "九"}
+
+
+def _int_to_kanji(num: int) -> str:
+    if num == 0:
+        return "零"
+    units = ["", "十", "百", "千", "万"]
+    s = str(num)
+    out = []
+    length = len(s)
+    for i, ch in enumerate(s):
+        d = int(ch)
+        pos = length - i - 1
+        if d == 0:
+            continue
+        if d == 1 and pos > 0 and not out:
+            out.append(units[pos])
+        else:
+            out.append(KANJI_DIGITS[ch] + units[pos])
+    return "".join(out)
+
+
+def normalize_legal_ordinals(text: str, target_lang: str) -> str:
+    """Normalize legal ordinals based on target language conventions."""
+    low = target_lang.lower()
+    if not (low.startswith("ja") or low.startswith("zh")):
+        return text
+
+    def repl(m):
+        raw = m.group(1).translate(str.maketrans("０１２３４５６７８９", "0123456789"))
+        unit = m.group(2)
+        try:
+            n = int(raw)
+        except ValueError:
+            return m.group(0)
+        return f"第{_int_to_kanji(n)}{unit}"
+
+    # "第5章" => "第五章", "第12条" => "第十二条"
+    return re.sub(r"第\s*([0-9０-９]+)\s*([章节条])", repl, text)
+
+
 def build_system_prompt(
     glossary_segment: str,
     source_lang: str,
@@ -151,6 +193,10 @@ Hard rules:
     if target_lang.lower().startswith("zh"):
         base += """
 - Use full-width Chinese punctuation for body text."""
+    if target_lang.lower().startswith("ja") or target_lang.lower().startswith("zh"):
+        base += """
+- For legal ordinals, use kanji numerals instead of arabic digits:
+  write "第五章", "第十二条" (not "第5章", "第12条")."""
     if glossary_segment.strip():
         return base + "\n\n" + glossary_segment
     return base
@@ -162,6 +208,7 @@ def translate_batch(
     model: str,
     system: str,
     entries: list[dict],
+    target_lang: str,
     thinking_level: str = "LOW",
     max_retries: int = 3,
 ) -> list[dict]:
@@ -209,12 +256,17 @@ def translate_batch(
             if result_ids == expected_ids and all(
                 isinstance(e.get("text"), str) and e["text"].strip() for e in result
             ):
+                for e in result:
+                    e["text"] = normalize_legal_ordinals(e["text"], target_lang)
                 return result
 
             if len(result) == len(entries):
                 fixed = []
                 for src, out in zip(entries, result):
-                    fixed.append({"id": src["id"], "text": out.get("text", "")})
+                    fixed.append({
+                        "id": src["id"],
+                        "text": normalize_legal_ordinals(out.get("text", ""), target_lang),
+                    })
                 if all(f["text"].strip() for f in fixed):
                     return fixed
 
@@ -237,6 +289,7 @@ def retry_singles(
     model: str,
     system: str,
     entries: list[dict],
+    target_lang: str,
     thinking_level: str,
 ) -> list[dict]:
     """Fallback: translate entries one by one when batch fails."""
@@ -244,7 +297,9 @@ def retry_singles(
     for e in entries:
         print(f"    retry single id={e['id']} …", file=sys.stderr, flush=True)
         try:
-            out = translate_batch(base, key, model, system, [e], thinking_level, max_retries=2)
+            out = translate_batch(
+                base, key, model, system, [e], target_lang, thinking_level, max_retries=2
+            )
             results.extend(out)
         except RuntimeError as err:
             print(f"    FAILED id={e['id']}: {err}", file=sys.stderr)
@@ -309,7 +364,8 @@ def main():
     all_entries = json.loads(entries_path.read_text(encoding="utf-8"))
     all_ids = {e["id"] for e in all_entries}
 
-    batch_files = sorted(entries_dir.glob("batch_*.json"))
+    # Match only real batch shards (batch_0000.json, ...), exclude batch_manifest.json
+    batch_files = sorted(entries_dir.glob("batch_[0-9][0-9][0-9][0-9].json"))
     if not batch_files:
         print(f"No batch_*.json in {entries_dir}", file=sys.stderr)
         sys.exit(1)
@@ -362,7 +418,7 @@ def main():
         to_retry = [src_map[e["id"]] for e in failed if e["id"] in src_map]
         print(f"Retrying {len(to_retry)} failed entries …", file=sys.stderr)
 
-        retried = retry_singles(base, key, model, system, to_retry, thinking_level)
+        retried = retry_singles(base, key, model, system, to_retry, args.target_lang, thinking_level)
         for e in retried:
             translated_map[e["id"]] = e
         _save_state(translated_map, done_batches, translated_path, progress_path, all_ids, output_dir)
@@ -390,10 +446,10 @@ def main():
         )
 
         try:
-            result = translate_batch(base, key, model, system, batch, thinking_level)
+            result = translate_batch(base, key, model, system, batch, args.target_lang, thinking_level)
         except RuntimeError as e:
             print(f"  Batch failed, falling back to single-entry retry: {e}", file=sys.stderr)
-            result = retry_singles(base, key, model, system, batch, thinking_level)
+            result = retry_singles(base, key, model, system, batch, args.target_lang, thinking_level)
 
         for e in result:
             translated_map[e["id"]] = e
