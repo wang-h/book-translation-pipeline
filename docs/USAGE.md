@@ -243,3 +243,19 @@ KimiCode 常见做法是项目知识/提示词注入，而不是统一 skill 目
 2. 用阶段化指令驱动：
    - "按 P3 提取术语，source=en target=zh-CN。"
 3. 脚本执行命令与本手册保持一致。
+
+### OpenClaw
+
+OpenClaw 更适合“项目级规则注入”，而不是 Cursor 风格的全局 skill 软链接。
+
+建议：
+
+1. 在 OpenClaw 中打开本仓库作为项目。
+2. 把以下文件设为常驻上下文/规则：
+   - `SKILL.md`
+   - `REFERENCE.md`
+   - `docs/USAGE.md`
+3. 用阶段指令驱动执行：
+   - "执行 P2.5 目录重构"
+   - "执行 P4，source=en target=zh-CN，general 模式"
+4. 始终优先执行脚本命令（`book-translation-skills/scripts/*.py`）保证可复现。

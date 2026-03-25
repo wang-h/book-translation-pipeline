@@ -148,7 +148,7 @@ book-translation-pipeline/
 - Orchestration skill: [SKILL.md](SKILL.md)
 - Shared conventions: [REFERENCE.md](REFERENCE.md)
 
-## Skill Integration (Cursor / Claude Code / Codex / KimiCode)
+## Skill Integration (Cursor / Claude Code / Codex / KimiCode / OpenClaw)
 
 ### Cursor
 
@@ -190,3 +190,19 @@ Recommended pattern:
 2. Use stage-based prompts:
    - "按 P3 提取术语，语言对 en->zh-CN。"
 3. Keep commands script-driven (same commands as this README/USAGE).
+
+### OpenClaw
+
+OpenClaw is best used with repo-local orchestration docs instead of a Cursor-style global skill folder.
+
+Recommended pattern:
+
+1. Open this repo as the working project in OpenClaw.
+2. Add these files as always-on context/rules:
+   - `SKILL.md`
+   - `REFERENCE.md`
+   - `docs/USAGE.md`
+3. Start tasks with explicit stage intent:
+   - "Execute P2.5 TOC restructuring."
+   - "Execute P4 translation with source=en target=zh-CN, domain=general."
+4. Keep execution script-first (`book-translation-skills/scripts/*.py`) for reproducibility.
