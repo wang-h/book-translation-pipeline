@@ -19,6 +19,27 @@ sudo apt-get install -y texlive-xetex texlive-latex-extra texlive-lang-chinese f
 cp secrets.example.json workspace/local.secrets.json
 ```
 
+`openai.base_url` 使用 OpenAI-compatible 接口即可，不绑定某一家网关。
+也就是说你可以接 GPT / Gemini / Claude，只要该提供方支持兼容接口。
+
+示例（节选）：
+
+```json
+{
+  "openai": {
+    "base_url": "https://your-compatible-endpoint/v1",
+    "api_key": "YOUR_KEY",
+    "extract_model": "gpt-5.4-mini",
+    "translate_model": "gemini-2.5-pro"
+  }
+}
+```
+
+可替换模型示例：
+- GPT: `gpt-5.4`, `gpt-5.4-mini`
+- Gemini: `gemini-2.5-pro`
+- Claude: `claude-sonnet-4`
+
 ## 1. 标准流程
 
 在 `workspace/` 下执行：
@@ -176,4 +197,3 @@ python ../book-translation-skills/scripts/pdf_layout_check.py output/latex --man
 - 翻译结果：`work/p4_translated/translated.json`、`work/p4_translated/ch01.md`
 - 覆盖报告：`work/p4_translated/coverage_report.json`
 - 最终 PDF：`output/pdf/book.pdf`
-

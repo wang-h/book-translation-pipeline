@@ -1,106 +1,88 @@
 # Book Translation Pipeline
 
-端到端整书翻译流水线（PDF/Markdown -> 术语一致翻译 -> LaTeX/PDF）。
+[![Status](https://img.shields.io/badge/status-active-1f6feb)](https://github.com/wang-h/book-translation-pipeline)
+[![Python](https://img.shields.io/badge/python-3.10%2B-3776AB)](https://www.python.org/)
+[![License](https://img.shields.io/badge/license-MIT-2ea44f)](#)
 
-这个项目把整书翻译拆成可恢复、可并行、可审计的阶段，重点解决三件事：
-- 大文档稳定处理（分块、断点续跑、失败重试）
-- 全书术语一致（术语冻结 + 约束翻译）
-- 法律/专业类书籍结构稳定（目录重构 + 法条双语块）
+Production-oriented pipeline for translating full-length books with terminology control, legal-structure handling, and reproducible PDF output.
 
-## 核心能力
+## Why This Project
 
-- OCR 与解析统一入口（MinerU cloud API）
-- OCR 后处理（补漏 + Markdown 结构修复）
-- 目录重构（章/节/小节）
-- 术语提取与冻结（支持多语言对）
-- 翻译支持 `source_lang -> target_lang`（不再写死日->中）
-- 法律模式 `:::law-bilingual`（法条原文/译文同块输出）
-- LaTeX 排版与 PDF 精修
+Most book translation workflows break on three problems:
+- long-document instability (chunk failures, retries, resumability)
+- terminology drift across chapters
+- legal/structured text layout collapse during typesetting
 
-## 流水线
+This repo addresses those with staged processing, structured outputs, and deterministic checkpoints.
 
-```text
-P1 OCR
- -> P2 OCR后处理
- -> P2.5 目录重构
- -> P3 术语提取
- -> P4 翻译（多语言对）
- -> P5 LaTeX排版
- -> P6 PDF精修
-```
+## Feature Highlights
 
-## 仓库结构
+- End-to-end workflow: OCR -> repair -> TOC rebuild -> terminology -> translation -> PDF
+- Multilingual translation pairs: `source_lang -> target_lang`
+- Glossary-constrained translation for consistency
+- Legal mode with `:::law-bilingual` blocks
+- Resume-safe batch translation (`--resume`)
+- LaTeX project generation and layout QA checks
 
-```text
-book-translation-pipeline/
-├── README.md
-├── SKILL.md
-├── REFERENCE.md
-├── workspace/
-│   ├── input/
-│   ├── work/
-│   │   ├── p1_ocr/
-│   │   ├── p2_repair_chunks/
-│   │   ├── p2_repaired/
-│   │   ├── p3_toc/
-│   │   ├── p3_terminology/
-│   │   ├── p4_translate_chunks_v2/
-│   │   └── p4_translated/
-│   └── output/
-│       ├── latex/
-│       └── pdf/
-└── book-translation-skills/
-    ├── scripts/
-    ├── ocr-book-with-mineru-api/
-    ├── supplement-ocr-missing/
-    ├── repair-book-markdown/
-    ├── restructure-book-toc/
-    ├── extract-book-terminology/
-    ├── translate-book-to-zh/
-    ├── restructure-legal-layout/
-    ├── typeset-book-latex/
-    └── polish-book-pdf/
-```
+## Pipeline Stages
 
-## 快速开始
+| Stage | Name | Core Output |
+|---|---|---|
+| P1 | OCR | `work/p1_ocr/full.md` |
+| P2 | OCR Repair | `work/p2_repaired/full_repaired.md` |
+| P2.5 | TOC Restructuring | `work/p3_toc/chapter_structure.json` |
+| P3 | Terminology Extraction | `work/p3_terminology/glossary.json` |
+| P4 | Translation (Multilingual) | `work/p4_translated/translated.json` + `ch01.md` |
+| P5 | LaTeX Typesetting | `output/latex/` + draft PDF |
+| P6 | PDF Polish | final publication-ready PDF |
 
-### 1) 安装依赖
+## Provider & Model Support
+
+The pipeline uses an OpenAI-compatible API contract (`/chat/completions`).
+
+That means you can run GPT, Gemini, and Claude models through:
+- direct compatible endpoints
+- router/gateway providers (e.g. aihubmix, OpenRouter, custom internal gateway)
+
+Typical model choices:
+- Repair/Terms: `gpt-5.4-mini` / `claude-sonnet-4` / `gemini-2.5-pro`
+- Translation: `gpt-5.4` / `claude-sonnet-4` / `gemini-2.5-pro`
+
+## Quick Start
+
+### 1) Install dependencies
 
 ```bash
 pip install -r book-translation-skills/requirements.txt
 ```
 
-可选排版依赖（XeLaTeX）：
+Optional (XeLaTeX output):
 
 ```bash
 sudo apt-get install -y texlive-xetex texlive-latex-extra texlive-lang-chinese fonts-noto-cjk
 ```
 
-### 2) 配置密钥
+### 2) Configure secrets
 
 ```bash
 cp secrets.example.json workspace/local.secrets.json
-# 填入 mineru/openai 配置
 ```
 
-### 3) 最小可运行链路（推荐先烟测）
+### 3) Smoke test (recommended)
 
 ```bash
 cd workspace
 
-# P2.5 目录重构（基于已有修复稿）
 python ../book-translation-skills/scripts/rebuild_toc.py \
   --md work/p2_repaired/full_repaired.md \
   --output-json work/p3_toc/chapter_structure.json \
   --output-md work/p3_toc/toc.md
 
-# P4 分块
 python ../book-translation-skills/scripts/split_md_paragraphs.py \
   work/p2_repaired/full_repaired.md \
   --output-dir work/p4_translate_chunks_v2 \
   --batch-chars 10000
 
-# P4 翻译（legal）
 python ../book-translation-skills/scripts/openai_translate_md.py \
   --entries-dir work/p4_translate_chunks_v2 \
   --output-dir work/p4_translated \
@@ -112,45 +94,56 @@ python ../book-translation-skills/scripts/openai_translate_md.py \
   --limit 1
 ```
 
-## 多语言对示例
+## Multilingual Examples
 
-英文 -> 中文：
+English -> Chinese:
 
 ```bash
 python ../book-translation-skills/scripts/openai_translate_md.py \
   --entries-dir work/p4_translate_chunks_v2 \
   --output-dir work/p4_translated_en2zh \
   --glossary work/p3_terminology/glossary.json \
-  --source-lang en \
-  --target-lang zh-CN \
-  --domain general \
-  --no-law-bilingual \
-  --limit 1
+  --source-lang en --target-lang zh-CN \
+  --domain general --no-law-bilingual --limit 1
 ```
 
-中文 -> 英文：
+Chinese -> English:
 
 ```bash
 python ../book-translation-skills/scripts/openai_translate_md.py \
   --entries-dir work/p4_translate_chunks_v2 \
   --output-dir work/p4_translated_zh2en \
   --glossary work/p3_terminology/glossary.json \
-  --source-lang zh-CN \
-  --target-lang en \
-  --domain general \
-  --no-law-bilingual \
-  --limit 1
+  --source-lang zh-CN --target-lang en \
+  --domain general --no-law-bilingual --limit 1
 ```
 
-## 文档
+## Repository Layout
 
-- 详细操作手册：[`docs/USAGE.md`](docs/USAGE.md)
-- 流程编排规范：[`SKILL.md`](SKILL.md)
-- 共享约定：[`REFERENCE.md`](REFERENCE.md)
+```text
+book-translation-pipeline/
+├── README.md
+├── docs/USAGE.md
+├── SKILL.md
+├── REFERENCE.md
+├── workspace/
+└── book-translation-skills/
+    ├── scripts/
+    ├── restructure-book-toc/
+    ├── translate-book-to-zh/
+    ├── restructure-legal-layout/
+    └── ...
+```
 
-## 注意事项
+## Operational Notes
 
-- 不要把真实密钥提交到仓库。
-- 全量翻译建议用 `--resume`，避免中断后重复计费。
-- 法律模式下建议始终保留 `--law-bilingual`。
-- 目录重构建议在翻译前固定一次，避免下游结构漂移。
+- Use `--resume` for long jobs to avoid reprocessing and duplicate cost.
+- Freeze glossary before full translation runs.
+- Rebuild TOC once before translation to prevent hierarchy drift.
+- Never commit real secrets.
+
+## Documentation
+
+- Full usage guide: [docs/USAGE.md](docs/USAGE.md)
+- Orchestration skill: [SKILL.md](SKILL.md)
+- Shared conventions: [REFERENCE.md](REFERENCE.md)
