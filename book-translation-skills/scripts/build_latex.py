@@ -471,7 +471,7 @@ _TRIVIAL_PATTERNS = [
 
 def _is_trivial_term(t: dict) -> bool:
     """Filter out legal citation refs, document numbers, and single-char terms."""
-    ja = t.get("ja", "").strip()
+    ja = (t.get("ja") or t.get("source") or t.get("term") or "").strip()
     if len(ja) <= 1:
         return True
     for pat in _TRIVIAL_PATTERNS:
@@ -519,7 +519,7 @@ def build_glossary_appendix(glossary_path: pathlib.Path) -> str:
         if not group:
             continue
         label = TYPE_LABELS.get(tp, tp)
-        group.sort(key=lambda t: t.get("ja", ""))
+        group.sort(key=lambda t: t.get("ja") or t.get("source") or "")
 
         lines.append(f"\\section{{{label}}}（共 {len(group)} 条）")
         lines.append("")
@@ -530,8 +530,8 @@ def build_glossary_appendix(glossary_path: pathlib.Path) -> str:
         lines.append("\\endhead")
 
         for t in group:
-            ja = escape_latex(t.get("ja", ""))
-            zh = escape_latex(t.get("zh", ""))
+            ja = escape_latex(t.get("ja") or t.get("source") or "")
+            zh = escape_latex(t.get("zh") or t.get("target") or t.get("preferred_translation") or "")
             ja_cell = "{\\japfont " + ja + "}"
             lines.append(f"{ja_cell} & {zh} \\\\")
 
