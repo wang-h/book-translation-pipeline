@@ -147,3 +147,46 @@ book-translation-pipeline/
 - Full usage guide: [docs/USAGE.md](docs/USAGE.md)
 - Orchestration skill: [SKILL.md](SKILL.md)
 - Shared conventions: [REFERENCE.md](REFERENCE.md)
+
+## Skill Integration (Cursor / Claude Code / Codex / KimiCode)
+
+### Cursor
+
+Cursor supports project skill loading best in this repo layout.
+
+```bash
+mkdir -p ~/.cursor/skills
+ln -sfn /home/hao/book-translation-pipeline ~/.cursor/skills/book-translation-pipeline
+```
+
+Then in Cursor chat, reference stage intent directly (for example: "执行 P2.5 目录重构").
+
+### Claude Code
+
+Claude Code does not provide the same native skill directory mechanism as Cursor.
+Recommended project-level integration:
+
+1. Keep `SKILL.md` and `REFERENCE.md` at repo root (already present).
+2. Start task with an explicit instruction:
+   - "Read `SKILL.md` and execute Stage P4 with `source_lang=en target_lang=zh-CN`."
+3. For stable behavior, put persistent agent rules in your project-level instruction file if your setup supports it.
+
+### Codex
+
+Codex also works via repository context + explicit stage prompts.
+Recommended pattern:
+
+1. Open this repository as workspace.
+2. Start with:
+   - "Follow `SKILL.md` and `book-translation-skills/*/SKILL.md` for this task."
+3. Run stage scripts under `workspace/` exactly as documented in `docs/USAGE.md`.
+
+### KimiCode
+
+KimiCode integration is typically done via project knowledge/custom instruction, not a universal skill folder.
+Recommended pattern:
+
+1. Add `SKILL.md` + `REFERENCE.md` + `docs/USAGE.md` into project context.
+2. Use stage-based prompts:
+   - "按 P3 提取术语，语言对 en->zh-CN。"
+3. Keep commands script-driven (same commands as this README/USAGE).

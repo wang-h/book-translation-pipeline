@@ -197,3 +197,49 @@ python ../book-translation-skills/scripts/pdf_layout_check.py output/latex --man
 - 翻译结果：`work/p4_translated/translated.json`、`work/p4_translated/ch01.md`
 - 覆盖报告：`work/p4_translated/coverage_report.json`
 - 最终 PDF：`output/pdf/book.pdf`
+
+## 5. 在不同 AI 编码工具中导入/使用 Skill
+
+### Cursor（推荐）
+
+```bash
+mkdir -p ~/.cursor/skills
+ln -sfn /home/hao/book-translation-pipeline ~/.cursor/skills/book-translation-pipeline
+```
+
+验证：
+
+```bash
+ls -la ~/.cursor/skills/book-translation-pipeline
+```
+
+在 Cursor 中可直接说：
+- "执行 P2.5 目录重构"
+- "执行 P4，语言对 en->zh-CN，general 模式"
+
+### Claude Code
+
+Claude Code 一般不走 Cursor 那套 `~/.cursor/skills` 导入方式。建议：
+
+1. 保持仓库根目录有 `SKILL.md`、`REFERENCE.md`（本项目已提供）。
+2. 每次任务开头显式要求：
+   - "先读取 SKILL.md，再按 P4 执行。"
+3. 如果你的 Claude Code 环境支持项目级指令文件，把上述规则固化。
+
+### Codex
+
+Codex 也是按“仓库上下文 + 显式规则”工作：
+
+1. 打开本仓库为工作目录。
+2. 首条指令写明：
+   - "遵循 SKILL.md 与对应子 SKILL.md。"
+3. 后续直接下达阶段命令（P1~P6）。
+
+### KimiCode
+
+KimiCode 常见做法是项目知识/提示词注入，而不是统一 skill 目录：
+
+1. 把 `SKILL.md`、`REFERENCE.md`、本文件加入项目知识。
+2. 用阶段化指令驱动：
+   - "按 P3 提取术语，source=en target=zh-CN。"
+3. 脚本执行命令与本手册保持一致。
