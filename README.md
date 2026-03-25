@@ -1,5 +1,7 @@
 # Book Translation Pipeline
 
+English | [中文](README.zh-CN.md)
+
 [![Status](https://img.shields.io/badge/status-active-1f6feb)](https://github.com/wang-h/book-translation-pipeline)
 [![Python](https://img.shields.io/badge/python-3.10%2B-3776AB)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-MIT-2ea44f)](#)
