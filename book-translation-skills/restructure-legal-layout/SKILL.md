@@ -32,8 +32,8 @@ python ../book-translation-skills/scripts/rebuild_toc.py \
 # B) During translation, keep legal article source+translation in :::law-bilingual
 python ../book-translation-skills/scripts/openai_translate_md.py \
   --entries-dir work/p4_translate_chunks_v2 \
-  --output-dir work/p4_translated \
-  --glossary work/p3_terminology/glossary.json \
+  --output-dir work/p5_translated \
+  --glossary work/p4_terminology/glossary.json \
   --domain legal \
   --law-bilingual
 ```

@@ -11,7 +11,7 @@ description: >-
 
 ## Overview
 
-This skill uses an LLM to read repaired Markdown and extract terms that require consistent translation. The output is a frozen `glossary.json` used by P4. It supports configurable language pairs.
+This skill uses an LLM to read repaired Markdown and extract terms that require consistent translation. The output is a frozen `glossary.json` used by P5. It supports configurable language pairs.
 
 **Core principle:** Let the LLM understand the text and identify terms — don't rely on regex patterns.
 
@@ -34,7 +34,7 @@ Run `scripts/extract_terms.py`:
 ```bash
 cd workspace
 python ../book-translation-skills/scripts/extract_terms.py work/p2_repaired \
-  --output work/p3_terminology/glossary.json \
+  --output work/p4_terminology/glossary.json \
   --source-lang ja \
   --target-lang zh-CN
 ```
@@ -50,17 +50,17 @@ The script:
 
 ### Step 2: Human review (optional)
 
-The script outputs the glossary directly. The user may review and edit `glossary.json` before proceeding to P4.
+The script outputs the glossary directly. The user may review and edit `glossary.json` before proceeding to P5.
 
 If the user wants to skip review, proceed directly to P4.
 
 ### Step 3: Use in translation
 
-P4's `openai_translate_md.py` reads `glossary.json` and injects the term table into every translation prompt.
+P5's `openai_translate_md.py` reads `glossary.json` and injects the term table into every translation prompt.
 
 ## Output
 
-- `workspace/work/p3_terminology/glossary.json` — frozen glossary for translation.
+- `workspace/work/p4_terminology/glossary.json` — frozen glossary for translation.
 
 ## glossary.json Format
 

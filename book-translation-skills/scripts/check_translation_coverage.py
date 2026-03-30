@@ -3,7 +3,7 @@
 Usage:
     python check_translation_coverage.py \
       --entries work/p4_translate_chunks/entries.json \
-      --translated work/p4_translated/translated.json
+      --translated work/p5_translated/translated.json
 
 Checks every source entry has a corresponding translated entry that is:
   - Present (not missing)

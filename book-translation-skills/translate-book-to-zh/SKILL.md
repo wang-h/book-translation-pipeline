@@ -18,7 +18,7 @@ For shared conventions, see [REFERENCE.md](../../REFERENCE.md).
 
 ## Hard Constraints
 
-- **Glossary is mandatory.** Before translating any chunk, load `work/p3_terminology/glossary.json` and inject all frozen terms into the system prompt.
+- **Glossary is mandatory.** Before translating any chunk, load `work/p4_terminology/glossary.json` and inject all frozen terms into the system prompt.
 - **Preserve structure.** Heading levels, footnote order, list hierarchy, table layout, and formula placeholders must survive translation intact.
 - **Configurable language pair.** Use `--source-lang` and `--target-lang`.
 - **Legal originals retained (optional).** In legal mode, keep source + target together using `:::law-bilingual`.
@@ -29,7 +29,7 @@ For shared conventions, see [REFERENCE.md](../../REFERENCE.md).
 ## Input
 
 - `work/p2_repaired/ch*.md` or `work/p2_repaired/full_repaired.md` — repaired source-language markdown.
-- `work/p3_terminology/glossary.json` — frozen glossary.
+- `work/p4_terminology/glossary.json` — frozen glossary.
 - `config/chapter_manifest.json` — chapter metadata.
 
 ## Workflow
@@ -40,7 +40,7 @@ For shared conventions, see [REFERENCE.md](../../REFERENCE.md).
 import json, pathlib
 
 secrets = json.loads(pathlib.Path("local.secrets.json").read_text())
-glossary = json.loads(pathlib.Path("work/p3_terminology/glossary.json").read_text())
+glossary = json.loads(pathlib.Path("work/p4_terminology/glossary.json").read_text())
 ```
 
 ### Step 2: Build glossary prompt segment
@@ -70,8 +70,8 @@ python ../book-translation-skills/scripts/split_md_paragraphs.py \
 ```bash
 python ../book-translation-skills/scripts/openai_translate_md.py \
   --entries-dir work/p4_translate_chunks_v2 \
-  --output-dir work/p4_translated \
-  --glossary work/p3_terminology/glossary.json \
+  --output-dir work/p5_translated \
+  --glossary work/p4_terminology/glossary.json \
   --source-lang ja \
   --target-lang zh-CN \
   --domain legal \
@@ -93,11 +93,11 @@ Collect all terms recorded as `status: "new"` in `term_candidates.json`. Present
 
 ## Output
 
-- `work/p4_translated/ch01.md` (assembled markdown from translated entries)
-- `work/p4_translated/translated.json` (entry-level translation result)
-- `work/p4_translated/progress.json` (batch progress)
+- `work/p5_translated/ch01.md` (assembled markdown from translated entries)
+- `work/p5_translated/translated.json` (entry-level translation result)
+- `work/p5_translated/progress.json` (batch progress)
 - Updated `config/chapter_manifest.json` with `translation_status: "done"` per chapter.
-- Updated `work/p3_terminology/term_candidates.json` with any new terms found during translation.
+- Updated `work/p4_terminology/term_candidates.json` with any new terms found during translation.
 
 ## Error Handling
 

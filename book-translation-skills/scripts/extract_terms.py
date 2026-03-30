@@ -1,7 +1,7 @@
 """Extract terminology from repaired Markdown using LLM.
 
 Usage:
-    python extract_terms.py <chapters_dir> [--output work/p3_terminology/glossary.json]
+    python extract_terms.py <chapters_dir> [--output work/p4_terminology/glossary.json]
 
 Two-pass approach:
   Pass 1 – Chunk-level extraction with strict quality prompt
@@ -15,14 +15,11 @@ import json
 import pathlib
 import re
 import sys
-import time
 from collections import Counter, defaultdict
 
-import requests
+from llm_client import create_client_from_secrets
 
 from book_translation_paths import resolve_workspace
-
-SECRETS_CANDIDATES = ("local.secrets.json", "secrets.json")
 
 def _lang_label(lang: str) -> str:
     low = lang.lower()
@@ -43,11 +40,44 @@ def _lang_label(lang: str) -> str:
     return lang
 
 
-def build_extract_prompt(source_lang: str, target_lang: str) -> str:
+def build_extract_prompt(
+    source_lang: str, 
+    target_lang: str, 
+    master_glossary: list[dict] | None = None
+) -> str:
     src = _lang_label(source_lang)
     tgt = _lang_label(target_lang)
+    
+    # 构建主术语库参考部分
+    master_ref = ""
+    if master_glossary:
+        master_ref = "\n\n## 权威术语库参考（必须优先使用以下已审定的译法）\n"
+        for term in master_glossary[:30]:  # 限制数量避免prompt太长
+            src_term = term.get("source", "")
+            tgt_term = term.get("target", "")
+            definition = term.get("definition", "")
+            forbidden = term.get("forbidden_translations", [])
+            master_ref += f"\n- {src_term} → {tgt_term}"
+            if definition:
+                master_ref += f"（定义：{definition}）"
+            if forbidden:
+                master_ref += f"【禁用译法：{', '.join(forbidden)}】"
+        master_ref += "\n\n## 术语翻译质量示例\n"
+        master_ref += """
+优质术语翻译示例：
+- ❌ "domaine national" → "国有地带" （太泛，非法律用语）
+- ✅ "domaine national" → "国有土地" （符合中国土地管理法用语）
+- ❌ "classement" → "划入保护林区" （描述性，非术语）
+- ✅ "classement" → "定级" （符合林业行政术语）
+- ❌ "redevance" → "规费" （口语化）
+- ✅ "redevance" → "行政事业性收费" （行政法正式用语）
+
+"""
+    
     return f"""\
-You are a professional terminologist preparing a {src}→{tgt} translation glossary for a legal/professional book.
+You are a professional terminologist preparing a {src}→{tgt} translation glossary for a LEGAL/FORESTRY LAW book.
+
+IMPORTANT: This is for translation into Chinese legal/forestry terminology. You must find the CLOSEST EQUIVALENT CONCEPT in Chinese law, NOT literal translation.{master_ref}
 
 Given a chunk of {src} text, extract terms that genuinely need a GLOSSARY ENTRY to ensure translation consistency.
 
@@ -55,7 +85,7 @@ Focus on:
 1. Law names & abbreviations.
 2. Institutions & organizations.
 3. Roles & titles.
-4. Domain-specific concepts.
+4. Domain-specific concepts (especially forestry and administrative law).
 5. Person names and fixed references.
 
 DO NOT extract:
@@ -66,12 +96,13 @@ DO NOT extract:
 
 For each term provide:
 - "source": source-language term (normalized, canonical form)
-- "target": recommended target-language translation
+- "target": recommended target-language translation (MUST match Chinese legal/forestry usage)
 - "type": one of "law_name", "institution", "role", "abbreviation", "person_name", "concept", "other"
-- "notes": brief note only if there is a translation trap
+- "notes": brief note if there is a translation trap or concept mismatch between legal systems
 
 Return a JSON array only. No text outside the JSON.
-Quality over quantity: keep only terms with real consistency value."""
+Quality over quantity: keep only terms with real consistency value.
+When in doubt between a literal translation and an established Chinese legal term, ALWAYS choose the established Chinese legal term."""
 
 
 def build_prune_prompt(source_lang: str, target_lang: str) -> str:
@@ -102,32 +133,7 @@ Output format per entry:
 Return only JSON array. No extra text."""
 
 
-def resolve_secrets_path() -> pathlib.Path | None:
-    root = resolve_workspace()
-    for name in SECRETS_CANDIDATES:
-        p = root / name
-        try:
-            if p.is_file():
-                return p
-        except OSError:
-            continue
-    return None
 
-
-def load_openai_cfg():
-    path = resolve_secrets_path()
-    if path is None:
-        print("No secrets.json / local.secrets.json", file=sys.stderr)
-        sys.exit(1)
-    data = json.loads(path.read_text(encoding="utf-8"))
-    oa = data.get("openai") or {}
-    base = (oa.get("base_url") or "https://api.openai.com/v1").rstrip("/")
-    key = oa.get("api_key")
-    model = oa.get("extract_model") or "gpt-5.4-mini"
-    if not key:
-        print("openai.api_key missing in secrets", file=sys.stderr)
-        sys.exit(1)
-    return base, key, model
 
 
 def split_into_chunks(text: str, max_chars: int = 12000) -> list[str]:
@@ -150,48 +156,43 @@ def split_into_chunks(text: str, max_chars: int = 12000) -> list[str]:
 
 
 def call_llm(
-    base: str, key: str, model: str, system: str, user_content: str,
-    max_tokens: int = 8192, max_retries: int = 3,
+    client,
+    model: str,
+    system: str,
+    user_content: str,
+    max_tokens: int = 8192,
+    max_retries: int = 3,
 ) -> str:
-    url = f"{base}/chat/completions"
-    headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
-    payload = {
-        "model": model,
-        "temperature": 0.1,
-        "max_completion_tokens": max_tokens,
-        "messages": [
-            {"role": "system", "content": system},
-            {"role": "user", "content": user_content},
-        ],
-    }
-    last_err = None
-    for attempt in range(max_retries):
-        try:
-            r = requests.post(url, headers=headers, json=payload, timeout=300)
-            if r.status_code != 200:
-                last_err = f"HTTP {r.status_code}: {r.text[:300]}"
-                time.sleep(5 * (attempt + 1))
-                continue
-            content = r.json()["choices"][0]["message"]["content"].strip()
-            content = re.sub(r"^```json\s*", "", content)
-            content = re.sub(r"\s*```$", "", content)
-            return content
-        except Exception as e:
-            last_err = str(e)
-        time.sleep(3 * (attempt + 1))
-    raise RuntimeError(f"LLM call failed after {max_retries} retries: {last_err}")
+    messages = [
+        {"role": "system", "content": system},
+        {"role": "user", "content": user_content},
+    ]
+    
+    response = client.call_with_retry(
+        messages=messages,
+        model=model,
+        temperature=0.1,
+        max_tokens=max_tokens,
+        max_retries=max_retries,
+    )
+    
+    content = response.content.strip()
+    # Strip markdown code fences if present
+    content = re.sub(r"^```json\s*", "", content)
+    content = re.sub(r"\s*```$", "", content)
+    return content
 
 
 def extract_from_chunk(
-    base: str,
-    key: str,
+    client,
     model: str,
     chunk_text: str,
     source_lang: str,
     target_lang: str,
+    master_glossary: list[dict] | None = None,
 ) -> list[dict]:
     try:
-        raw = call_llm(base, key, model, build_extract_prompt(source_lang, target_lang), chunk_text)
+        raw = call_llm(client, model, build_extract_prompt(source_lang, target_lang, master_glossary), chunk_text)
         terms = json.loads(raw)
         if isinstance(terms, list):
             return [t for t in terms if isinstance(t, dict)]
@@ -239,8 +240,7 @@ def merge_terms(all_raw: list[dict], source_lang: str, target_lang: str) -> list
 
 
 def prune_glossary(
-    base: str,
-    key: str,
+    client,
     model: str,
     terms: list[dict],
     source_lang: str,
@@ -259,8 +259,7 @@ def prune_glossary(
         user_content = json.dumps(batch, ensure_ascii=False)
         try:
             raw = call_llm(
-                base,
-                key,
+                client,
                 model,
                 build_prune_prompt(source_lang, target_lang),
                 user_content,
@@ -279,15 +278,31 @@ def prune_glossary(
     return pruned
 
 
+def load_master_glossary(path: pathlib.Path | None) -> list[dict] | None:
+    """Load master glossary as reference for extraction."""
+    if path is None or not path.is_file():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        terms = data.get("terms", [])
+        print(f"Loaded {len(terms)} terms from master glossary: {path}", file=sys.stderr)
+        return terms
+    except (OSError, json.JSONDecodeError) as e:
+        print(f"Warning: failed to load master glossary: {e}", file=sys.stderr)
+        return None
+
+
 def main():
     parser = argparse.ArgumentParser(description="Extract terminology via LLM (2-pass)")
     parser.add_argument("chapters_dir", help="Directory with repaired .md files")
-    parser.add_argument("--output", default="work/p3_terminology/glossary.json")
+    parser.add_argument("--output", default="work/p4_terminology/glossary.json")
     parser.add_argument("--limit", type=int, default=0, help="Max chunks to process (0=all)")
+    parser.add_argument("--provider", help="LLM provider (openai, kimi, gemini, anthropic). Uses default_provider from secrets if not specified.")
     parser.add_argument("--model", help="Override model from secrets")
     parser.add_argument("--skip-prune", action="store_true", help="Skip pass-2 pruning")
     parser.add_argument("--source-lang", default="ja", help="Source language code")
     parser.add_argument("--target-lang", default="zh-CN", help="Target language code")
+    parser.add_argument("--master-glossary", help="Path to master glossary JSON for reference (e.g., reference_corpus/forest_law_master_glossary.json)")
     args = parser.parse_args()
 
     chapters_dir = pathlib.Path(args.chapters_dir)
@@ -304,24 +319,39 @@ def main():
     chunks = split_into_chunks(combined, max_chars=12000)
     print(f"Text: {len(combined)} chars -> {len(chunks)} chunks", file=sys.stderr)
 
-    base, key, model = load_openai_cfg()
+    # Create LLM client from secrets
+    try:
+        client, model = create_client_from_secrets(
+            provider=args.provider,
+            task="extract"
+        )
+    except Exception as e:
+        print(f"Error initializing LLM client: {e}", file=sys.stderr)
+        sys.exit(1)
+    
     if args.model:
         model = args.model
-    print(f"Model: {model} @ {base}", file=sys.stderr)
+    
+    print(f"Provider: {client.provider}, Model: {model}", file=sys.stderr)
 
     limit = args.limit if args.limit > 0 else len(chunks)
     all_raw: list[dict] = []
 
+    # Load master glossary if provided
+    master_glossary = None
+    if args.master_glossary:
+        master_glossary = load_master_glossary(pathlib.Path(args.master_glossary))
+    
     print(f"\n=== Pass 1: Extract from {limit} chunks ===", file=sys.stderr)
     for i, chunk in enumerate(chunks[:limit]):
         print(f"[{i+1}/{limit}] extracting ({len(chunk)} chars) …", file=sys.stderr, flush=True)
         terms = extract_from_chunk(
-            base,
-            key,
+            client,
             model,
             chunk,
             source_lang=args.source_lang,
             target_lang=args.target_lang,
+            master_glossary=master_glossary,
         )
         print(f"  -> {len(terms)} terms", file=sys.stderr)
         all_raw.extend(terms)
@@ -333,8 +363,7 @@ def main():
     if not args.skip_prune and len(merged) > 100:
         print(f"\n=== Pass 2: LLM quality pruning ===", file=sys.stderr)
         merged = prune_glossary(
-            base,
-            key,
+            client,
             model,
             merged,
             source_lang=args.source_lang,

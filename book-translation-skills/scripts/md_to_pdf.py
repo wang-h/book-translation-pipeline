@@ -1,7 +1,7 @@
 """Convert translated Chinese Markdown to PDF via WeasyPrint.
 
 Usage:
-    python md_to_pdf.py work/p4_translated/ch01.md --output output/pdf/book.pdf --title "教育関係法（中文译本）"
+    python md_to_pdf.py work/p5_translated/ch01.md --output output/pdf/book.pdf --title "教育関係法（中文译本）"
 """
 
 from __future__ import annotations

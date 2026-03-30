@@ -1,0 +1,187 @@
+{
+  "meta": {
+    "name": "森林法典法译中核心术语库",
+    "source_lang": "fr",
+    "target_lang": "zh-CN",
+    "domain": "森林法/行政法",
+    "version": "1.0",
+    "last_reviewed": "2026-03-30",
+    "status": "active"
+  },
+  "terms": [
+    {
+      "source": "domaine national",
+      "target": "国有土地",
+      "definition": "属于国家所有的土地，包括林地、草地等",
+      "usage_note": "在中国法律体系中对应'国有土地'概念，必须使用此译法",
+      "forbidden_translations": ["国有地带", "国家领域", "国家土地"],
+      "type": "法律概念",
+      "status": "approved",
+      "examples": [
+        {"source": "Les forêts du domaine national", "target": "国有土地上的森林"}
+      ]
+    },
+    {
+      "source": "classement",
+      "target": "定级",
+      "definition": "将森林或土地划入特定法律类别的行政行为",
+      "usage_note": "林业行政术语，指确定森林保护等级的行政行为",
+      "forbidden_translations": ["划入保护林区", "分类", "划入", "定级划定"],
+      "type": "行政行为",
+      "status": "approved",
+      "examples": [
+        {"source": "Le classement d'une forêt", "target": "森林定级"}
+      ]
+    },
+    {
+      "source": "déclassement",
+      "target": "分类调整",
+      "definition": "解除原有森林定级或改变其保护等级的行政行为",
+      "usage_note": "与'定级'相对应，指调整而非简单解除",
+      "forbidden_translations": ["解除分级", "降级", "解级"],
+      "type": "行政行为",
+      "status": "approved",
+      "examples": [
+        {"source": "Le déclassement d'une forêt classée", "target": "保护林的分类调整"}
+      ]
+    },
+    {
+      "source": "redevance",
+      "target": "行政事业性收费",
+      "definition": "行政机关依法收取的费用，具有强制性、无偿性",
+      "usage_note": "行政法正式用语，区别于一般'费用'、'税费'",
+      "forbidden_translations": ["规费", "费用", "税费"],
+      "type": "财政术语",
+      "status": "approved",
+      "examples": [
+        {"source": "redevance forestière", "target": "森林行政事业性收费"}
+      ]
+    },
+    {
+      "source": "contrainte par corps",
+      "target": "司法罚款",
+      "definition": "通过限制人身自由实施的强制执行措施",
+      "usage_note": "在中国法律体系中无直接对应，最接近的是司法罚款/拘留",
+      "forbidden_translations": ["人身强制执行", "身体约束", "人身强制"],
+      "type": "法律概念",
+      "status": "approved",
+      "concept_mapping": "法国法概念，对应中国法中的'司法拘留'或'罚款'"
+    },
+    {
+      "source": "bois communal",
+      "target": "国有林地",
+      "definition": "归市镇集体所有但按国家法律管理的林地",
+      "usage_note": "在塞内加尔/法国法中为市镇公有，但中文语境下统一称'国有林地'更准确",
+      "forbidden_translations": ["公有林地", "市镇林地", "集体林地"],
+      "type": "法律概念",
+      "status": "approved"
+    },
+    {
+      "source": "concession forestière",
+      "target": "森林资源承包经营",
+      "definition": "将森林资源经营权依法授予私人主体的行政许可",
+      "usage_note": "中国《森林法》中的对应概念是'森林资源承包经营'",
+      "forbidden_translations": ["森林特许经营", "林业特许", "森林特许权"],
+      "type": "行政许可",
+      "status": "approved"
+    },
+    {
+      "source": "feu précoce",
+      "target": "计划烧除",
+      "definition": "为预防火灾或促进植被更新而进行的可控燃烧",
+      "usage_note": "中国林业术语为'计划烧除'或'计划火烧'",
+      "forbidden_translations": ["预防性早火", "早期烧荒", "早火"],
+      "type": "技术术语",
+      "status": "approved"
+    },
+    {
+      "source": "périmètre de reboisement",
+      "target": "造林地",
+      "definition": "划定用于人工造林的土地范围",
+      "usage_note": "简洁表述，不必译为'造林区域'",
+      "forbidden_translations": ["造林或恢复区域", "再造林区域", "植树区域"],
+      "type": "技术术语",
+      "status": "approved"
+    },
+    {
+      "source": "périmètre de reboisement ou de restauration",
+      "target": "造林地",
+      "definition": "用于造林或森林恢复的土地范围",
+      "usage_note": "合并表述，统一译为'造林地'",
+      "forbidden_translations": ["造林或恢复区域", "造林和恢复区域"],
+      "type": "技术术语",
+      "status": "approved"
+    },
+    {
+      "source": "réserve naturelle communale",
+      "target": "地方级自然保护区",
+      "definition": "由市镇设立和管理的自然保护区",
+      "usage_note": "中国自然保护区体系分为国家级、地方级（省级、市级、县级）",
+      "forbidden_translations": ["市镇自然保护区", "社区自然保护区"],
+      "type": "保护地类别",
+      "status": "approved"
+    },
+    {
+      "source": "réserve naturelle intégrale",
+      "target": "核心区",
+      "definition": "禁止任何人为干预的严格保护区",
+      "usage_note": "对应中国自然保护区功能分区中的'核心区'概念",
+      "forbidden_translations": ["严格自然保护区", "全面自然保护区", "严格保护区"],
+      "type": "保护地类别",
+      "status": "approved"
+    },
+    {
+      "source": "peuplement artificiel",
+      "target": "人工林",
+      "definition": "通过人工造林形成的森林",
+      "usage_note": "简洁表述，不必译为'人工林分'",
+      "forbidden_translations": ["人工林分", "人造林", "人工种植林"],
+      "type": "林业术语",
+      "status": "approved"
+    },
+    {
+      "source": "défrichement",
+      "target": "林地清理",
+      "definition": "清除林地植被以改变土地用途的行为",
+      "usage_note": "在林业法语境中常带有毁林含义，但中国法标准表述为'林地清理'",
+      "forbidden_translations": ["开垦", "毁林", "清林"],
+      "type": "林业术语",
+      "status": "approved"
+    },
+    {
+      "source": "marteau forestier",
+      "target": "林业专用印章",
+      "definition": "用于在木材上标记检验合格印记的专用工具",
+      "usage_note": "不是普通锤子，而是官方检验标记工具，译为'印章'更准确",
+      "forbidden_translations": ["印记锤", "林业标记锤", "检印锤", "林业锤"],
+      "type": "执法工具",
+      "status": "approved"
+    },
+    {
+      "source": "marteaux forestiers",
+      "target": "林业专用印章",
+      "definition": "复数形式，同上",
+      "forbidden_translations": ["林业印记锤", "检印锤"],
+      "type": "执法工具",
+      "status": "approved"
+    },
+    {
+      "source": "espèce de flore menacée",
+      "target": "濒危植物物种",
+      "definition": "面临灭绝危险的野生植物物种",
+      "usage_note": "必须使用'濒危植物物种'，禁用其他变体",
+      "forbidden_translations": ["濒危植物群物种", "濒临灭绝植物物种", "受威胁植物物种"],
+      "type": "生物学术语",
+      "status": "approved"
+    },
+    {
+      "source": "intégration dans le domaine forestier",
+      "target": "定级",
+      "definition": "将林地纳入保护森林范围",
+      "usage_note": "动作性表述，译为'定级'",
+      "forbidden_translations": ["划入保护林区", "纳入森林领域"],
+      "type": "行政行为",
+      "status": "approved"
+    }
+  ]
+}

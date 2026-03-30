@@ -23,6 +23,24 @@ HEADING_MAP = {
 
 KANJI_DIGITS = {"0": "零", "1": "一", "2": "二", "3": "三", "4": "四", "5": "五", "6": "六", "7": "七", "8": "八", "9": "九"}
 
+LANG_NAMES_ZH: dict[str, str] = {
+    "ja": "日语",
+    "fr": "法语",
+    "en": "英语",
+    "de": "德语",
+    "es": "西班牙语",
+    "pt": "葡萄牙语",
+    "ko": "韩语",
+    "it": "意大利语",
+    "ru": "俄语",
+    "ar": "阿拉伯语",
+}
+
+
+def _lang_display_name(code: str) -> str:
+    """Return Chinese display name for a language code, fallback to the code itself."""
+    return LANG_NAMES_ZH.get(code.split("-")[0].lower(), code)
+
 
 def _int_to_kanji(num: int) -> str:
     if num == 0:
@@ -84,18 +102,30 @@ def _format_author_table(author_lines: list[str]) -> str:
     return "\n".join(lines)
 
 
+_LAW_BOX_SOURCE_LANG = "ja"
+
+
+def set_law_box_source_lang(lang: str) -> None:
+    global _LAW_BOX_SOURCE_LANG
+    _LAW_BOX_SOURCE_LANG = lang
+
+
 def _format_law_bilingual_box(jp_lines: list[str], zh_lines: list[str]) -> str:
-    """Render JP original + ZH translation in a boxed layout."""
+    """Render source original + ZH translation in a boxed layout."""
     jp = "\n".join(escape_latex(inline_format(x)) for x in jp_lines if x.strip())
     zh = "\n".join(escape_latex(inline_format(x)) for x in zh_lines if x.strip())
     if not jp and not zh:
         return ""
+    src_name = _lang_display_name(_LAW_BOX_SOURCE_LANG)
+    use_japfont = _LAW_BOX_SOURCE_LANG.startswith("ja")
+    font_open = "{\\japfont\n" if use_japfont else ""
+    font_close = "}\n" if use_japfont else ""
     return (
         "\\begin{tcolorbox}[colback=black!3,colframe=black!70,title=法条原文与译文]\n"
-        "\\textbf{法条原文（日语）}\\\\\n"
-        "{\\japfont\n"
+        f"\\textbf{{法条原文（{src_name}）}}\\\\\n"
+        f"{font_open}"
         f"{jp}\n"
-        "}\n\n"
+        f"{font_close}\n"
         "\\vspace{0.6em}\n"
         "\\textbf{法条译文（中文）}\\\\\n"
         f"{zh}\n"
@@ -488,7 +518,7 @@ def _keep_for_appendix(t: dict) -> bool:
     return not _is_trivial_term(t)
 
 
-def build_glossary_appendix(glossary_path: pathlib.Path) -> str:
+def build_glossary_appendix(glossary_path: pathlib.Path, source_lang: str = "ja") -> str:
     """Build a LaTeX appendix chapter from glossary.json."""
     with open(glossary_path, encoding="utf-8") as f:
         data = json.load(f)
@@ -525,15 +555,19 @@ def build_glossary_appendix(glossary_path: pathlib.Path) -> str:
         lines.append("")
         lines.append("\\begin{longtable}{@{}p{0.42\\textwidth}p{0.52\\textwidth}@{}}")
         lines.append("\\toprule")
-        lines.append("\\textbf{日语原文} & \\textbf{中文译文} \\\\")
+        src_label = _lang_display_name(source_lang) + "原文"
+        lines.append(f"\\textbf{{{src_label}}} & \\textbf{{中文译文}} \\\\")
         lines.append("\\midrule")
         lines.append("\\endhead")
 
         for t in group:
-            ja = escape_latex(t.get("ja") or t.get("source") or "")
+            src = escape_latex(t.get("ja") or t.get("source") or "")
             zh = escape_latex(t.get("zh") or t.get("target") or t.get("preferred_translation") or "")
-            ja_cell = "{\\japfont " + ja + "}"
-            lines.append(f"{ja_cell} & {zh} \\\\")
+            if source_lang.startswith("ja"):
+                src_cell = "{\\japfont " + src + "}"
+            else:
+                src_cell = src
+            lines.append(f"{src_cell} & {zh} \\\\")
 
         lines.append("\\bottomrule")
         lines.append("\\end{longtable}")
@@ -581,12 +615,15 @@ def main():
     parser.add_argument("--title", default="", help="Book title for cover page (empty = auto infer)")
     parser.add_argument("--images-dir", default=None, help="Path to images directory (copied into output for Overleaf)")
     parser.add_argument("--glossary", default=None, help="Path to glossary.json for terminology appendix")
+    parser.add_argument("--source-lang", default="ja", help="Source language code (ja, fr, en, …) for display labels")
     args = parser.parse_args()
 
     translated_dir = pathlib.Path(args.translated_dir)
     output_dir = pathlib.Path(args.output_dir)
     chapters_dir = output_dir / "chapters"
     chapters_dir.mkdir(parents=True, exist_ok=True)
+
+    set_law_box_source_lang(args.source_lang)
 
     md_files = sorted(translated_dir.glob("ch*.md"))
     if not md_files:
@@ -624,7 +661,7 @@ def main():
     if args.glossary:
         glossary_path = pathlib.Path(args.glossary)
         if glossary_path.exists():
-            glossary_tex = build_glossary_appendix(glossary_path)
+            glossary_tex = build_glossary_appendix(glossary_path, source_lang=args.source_lang)
             (output_dir / "glossary.tex").write_text(glossary_tex, encoding="utf-8")
             glossary_input = "\n\\appendix\n\\input{glossary}"
             print(f"  Generated glossary appendix from {glossary_path}", file=sys.stderr)

@@ -28,11 +28,11 @@
 |---|---|---|
 | P1 | OCR | `work/p1_ocr/full.md` |
 | P2 | OCR 修复 | `work/p2_repaired/full_repaired.md` |
-| P2.5 | 目录重构 | `work/p3_toc/chapter_structure.json` |
-| P3 | 术语提取 | `work/p3_terminology/glossary.json` |
-| P4 | 翻译（多语言对） | `work/p4_translated/translated.json` + `ch01.md` |
-| P5 | LaTeX 排版 | `output/latex/` + 草稿 PDF |
-| P6 | PDF 精修 | 最终可发布 PDF |
+| P3 | 目录重构 | `work/p3_toc/chapter_structure.json` |
+| P4 | 术语提取 | `work/p4_terminology/glossary.json` |
+| P5 | 翻译（多语言对） | `work/p5_translated/translated.json` + `ch01.md` |
+| P6 | LaTeX 排版 | `output/latex/` + 草稿 PDF |
+| P7 | PDF 精修 | 最终可发布 PDF |
 
 ## 模型与提供方支持
 
@@ -86,8 +86,8 @@ python ../book-translation-skills/scripts/split_md_paragraphs.py \
 
 python ../book-translation-skills/scripts/openai_translate_md.py \
   --entries-dir work/p4_translate_chunks_v2 \
-  --output-dir work/p4_translated \
-  --glossary work/p3_terminology/glossary.json \
+  --output-dir work/p5_translated \
+  --glossary work/p4_terminology/glossary.json \
   --source-lang ja \
   --target-lang zh-CN \
   --domain legal \
@@ -101,9 +101,9 @@ python ../book-translation-skills/scripts/openai_translate_md.py \
 
 ```bash
 python ../book-translation-skills/scripts/openai_translate_md.py \
-  --entries-dir work/p4_translate_chunks_v2 \
-  --output-dir work/p4_translated_en2zh \
-  --glossary work/p3_terminology/glossary.json \
+  --entries-dir work/p5_translate_chunks_v2 \
+  --output-dir work/p5_translated_en2zh \
+  --glossary work/p4_terminology/glossary.json \
   --source-lang en --target-lang zh-CN \
   --domain general --no-law-bilingual --limit 1
 ```
@@ -112,9 +112,9 @@ python ../book-translation-skills/scripts/openai_translate_md.py \
 
 ```bash
 python ../book-translation-skills/scripts/openai_translate_md.py \
-  --entries-dir work/p4_translate_chunks_v2 \
-  --output-dir work/p4_translated_zh2en \
-  --glossary work/p3_terminology/glossary.json \
+  --entries-dir work/p5_translate_chunks_v2 \
+  --output-dir work/p5_translated_zh2en \
+  --glossary work/p4_terminology/glossary.json \
   --source-lang zh-CN --target-lang en \
   --domain general --no-law-bilingual --limit 1
 ```

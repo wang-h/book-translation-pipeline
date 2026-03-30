@@ -32,11 +32,11 @@ This repo addresses those with staged processing, structured outputs, and determ
 |---|---|---|
 | P1 | OCR | `work/p1_ocr/full.md` |
 | P2 | OCR Repair | `work/p2_repaired/full_repaired.md` |
-| P2.5 | TOC Restructuring | `work/p3_toc/chapter_structure.json` |
-| P3 | Terminology Extraction | `work/p3_terminology/glossary.json` |
-| P4 | Translation (Multilingual) | `work/p4_translated/translated.json` + `ch01.md` |
-| P5 | LaTeX Typesetting | `output/latex/` + draft PDF |
-| P6 | PDF Polish | final publication-ready PDF |
+| P3 | TOC Restructuring | `work/p3_toc/chapter_structure.json` |
+| P4 | Terminology Extraction | `work/p4_terminology/glossary.json` |
+| P5 | Translation (Multilingual) | `work/p5_translated/translated.json` + `ch01.md` |
+| P6 | LaTeX Typesetting | `output/latex/` + draft PDF |
+| P7 | PDF Polish | final publication-ready PDF |
 
 ## Provider & Model Support
 
@@ -87,8 +87,8 @@ python ../book-translation-skills/scripts/split_md_paragraphs.py \
 
 python ../book-translation-skills/scripts/openai_translate_md.py \
   --entries-dir work/p4_translate_chunks_v2 \
-  --output-dir work/p4_translated \
-  --glossary work/p3_terminology/glossary.json \
+  --output-dir work/p5_translated \
+  --glossary work/p4_terminology/glossary.json \
   --source-lang ja \
   --target-lang zh-CN \
   --domain legal \
@@ -102,9 +102,9 @@ English -> Chinese:
 
 ```bash
 python ../book-translation-skills/scripts/openai_translate_md.py \
-  --entries-dir work/p4_translate_chunks_v2 \
-  --output-dir work/p4_translated_en2zh \
-  --glossary work/p3_terminology/glossary.json \
+  --entries-dir work/p5_translate_chunks_v2 \
+  --output-dir work/p5_translated_en2zh \
+  --glossary work/p4_terminology/glossary.json \
   --source-lang en --target-lang zh-CN \
   --domain general --no-law-bilingual --limit 1
 ```
@@ -113,9 +113,9 @@ Chinese -> English:
 
 ```bash
 python ../book-translation-skills/scripts/openai_translate_md.py \
-  --entries-dir work/p4_translate_chunks_v2 \
-  --output-dir work/p4_translated_zh2en \
-  --glossary work/p3_terminology/glossary.json \
+  --entries-dir work/p5_translate_chunks_v2 \
+  --output-dir work/p5_translated_zh2en \
+  --glossary work/p4_terminology/glossary.json \
   --source-lang zh-CN --target-lang en \
   --domain general --no-law-bilingual --limit 1
 ```
@@ -161,7 +161,7 @@ mkdir -p ~/.cursor/skills
 ln -sfn /home/hao/book-translation-pipeline ~/.cursor/skills/book-translation-pipeline
 ```
 
-Then in Cursor chat, reference stage intent directly (for example: "执行 P2.5 目录重构").
+Then in Cursor chat, reference stage intent directly (for example: "执行 P3 目录重构").
 
 ### Claude Code
 
@@ -170,7 +170,7 @@ Recommended project-level integration:
 
 1. Keep `SKILL.md` and `REFERENCE.md` at repo root (already present).
 2. Start task with an explicit instruction:
-   - "Read `SKILL.md` and execute Stage P4 with `source_lang=en target_lang=zh-CN`."
+   - "Read `SKILL.md` and execute Stage P5 with `source_lang=en target_lang=zh-CN`."
 3. For stable behavior, put persistent agent rules in your project-level instruction file if your setup supports it.
 
 ### Codex
@@ -190,7 +190,7 @@ Recommended pattern:
 
 1. Add `SKILL.md` + `REFERENCE.md` + `docs/USAGE.md` into project context.
 2. Use stage-based prompts:
-   - "按 P3 提取术语，语言对 en->zh-CN。"
+   - "按 P4 提取术语，语言对 en->zh-CN。"
 3. Keep commands script-driven (same commands as this README/USAGE).
 
 ### OpenClaw
@@ -205,6 +205,6 @@ Recommended pattern:
    - `REFERENCE.md`
    - `docs/USAGE.md`
 3. Start tasks with explicit stage intent:
-   - "Execute P2.5 TOC restructuring."
-   - "Execute P4 translation with source=en target=zh-CN, domain=general."
+   - "Execute P3 TOC restructuring."
+   - "Execute P5 translation with source=en target=zh-CN, domain=general."
 4. Keep execution script-first (`book-translation-skills/scripts/*.py`) for reproducibility.

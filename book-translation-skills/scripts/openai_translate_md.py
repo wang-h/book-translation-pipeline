@@ -1,12 +1,14 @@
-"""Translate book Markdown between configurable language pairs via OpenAI-compatible API.
+"""Translate book Markdown between configurable language pairs via LLM API.
 
+Supports multiple providers: OpenAI, Kimi, Gemini, Anthropic/Claude.
 Structured JSON I/O: each source entry maps 1:1 to a translated entry.
 
 Usage:
     python openai_translate_md.py \
       --entries-dir work/p4_translate_chunks \
-      --output-dir work/p4_translated \
-      --glossary work/p3_terminology/glossary.json
+      --output-dir work/p5_translated \
+      --glossary work/p4_terminology/glossary.json \
+      --provider kimi
 
 Inputs:
     entries-dir/batch_XXXX.json   – batched source entries [{"id": N, "text": "..."}, ...]
@@ -25,47 +27,36 @@ import json
 import pathlib
 import re
 import sys
-import time
 
-import requests
+from llm_client import create_client_from_secrets, get_thinking_level
 
 from book_translation_paths import resolve_workspace
 
-SECRETS_CANDIDATES = ("local.secrets.json", "secrets.json")
+
+def _lang_col_zh(lang: str) -> str:
+    low = lang.lower()
+    if low.startswith("ja"):
+        return "日文"
+    if low.startswith("zh"):
+        return "中文"
+    if low.startswith("en"):
+        return "英文"
+    if low.startswith("ko"):
+        return "韩文"
+    if low.startswith("fr"):
+        return "法文"
+    if low.startswith("de"):
+        return "德文"
+    if low.startswith("es"):
+        return "西文"
+    return "原文"
 
 
-def resolve_secrets_path() -> pathlib.Path | None:
-    root = resolve_workspace()
-    for name in SECRETS_CANDIDATES:
-        p = root / name
-        try:
-            if p.is_file():
-                return p
-        except OSError:
-            continue
-    return None
-
-
-def load_openai_cfg():
-    path = resolve_secrets_path()
-    if path is None:
-        print("No secrets.json / local.secrets.json", file=sys.stderr)
-        sys.exit(1)
-    data = json.loads(path.read_text(encoding="utf-8"))
-    oa = data.get("openai") or {}
-    base = (oa.get("base_url") or "https://api.openai.com/v1").rstrip("/")
-    key = oa.get("api_key")
-    model = oa.get("translate_model") or "gemini-3.1-pro-preview"
-    thinking_level = (oa.get("translate_thinking_level") or "LOW").upper()
-    if thinking_level not in {"LOW", "MEDIUM", "HIGH"}:
-        thinking_level = "LOW"
-    if not key:
-        print("openai.api_key missing in secrets", file=sys.stderr)
-        sys.exit(1)
-    return base, key, model, thinking_level
-
-
-def load_glossary_segment(glossary_path: pathlib.Path | None) -> str:
+def load_glossary_segment(
+    glossary_path: pathlib.Path | None,
+    source_lang: str,
+    target_lang: str,
+) -> str:
     if glossary_path is None or not glossary_path.is_file():
         return ""
     try:
@@ -75,19 +66,50 @@ def load_glossary_segment(glossary_path: pathlib.Path | None) -> str:
     terms = data.get("terms") or data.get("entries") or []
     if not terms:
         return ""
-    lines = ["## 必须遵守的术语译法（glossary）", "| 原文/日文 | 中文 | 备注 |", "|---|---|---|"]
+    src_col = _lang_col_zh(source_lang)
+    tgt_col = _lang_col_zh(target_lang)
+    
+    # 检查是否为新格式（包含 definition, forbidden_translations 等）
+    lines = ["## 强制术语约束（必须一字不差地遵循）", ""]
+    lines.append("以下术语的译法已由中国法律专家审定。翻译时必须使用'批准译法'，绝对禁止使用'禁止译法'：")
+    lines.append("")
+    
     for t in terms[:200]:
         if isinstance(t, dict):
             src = t.get("source") or t.get("ja") or t.get("term") or ""
-            zh = t.get("preferred_translation") or t.get("zh") or t.get("translation") or ""
-            note = t.get("notes") or ""
-            if src and zh:
-                lines.append(f"| {src} | {zh} | {note} |")
+            zh = (
+                t.get("preferred_translation")
+                or t.get("target")
+                or t.get("zh")
+                or t.get("translation")
+                or ""
+            )
+            if not src or not zh:
+                continue
+            
+            # 新格式：包含 forbidden_translations
+            forbidden = t.get("forbidden_translations", [])
+            definition = t.get("definition", "")
+            note = t.get("notes", "")
+            
+            lines.append(f"- **{src}** → **{zh}**")
+            if definition:
+                lines.append(f"  - 定义：{definition}")
+            if forbidden:
+                lines.append(f"  - 🚫 禁止译为：{', '.join(forbidden)}")
+            if note:
+                lines.append(f"  - 备注：{note}")
+            lines.append("")
         elif isinstance(t, (list, tuple)) and len(t) >= 2:
-            lines.append(f"| {t[0]} | {t[1]} | |")
-    if len(lines) <= 3:
+            lines.append(f"- **{t[0]}** → **{t[1]}**")
+            lines.append("")
+    
+    if len(lines) <= 5:
         return ""
-    return "\n".join(lines) + "\n\n"
+    
+    lines.append("⚠️ 警告：如果译文使用了'禁止译法'中的任何一个，该翻译将被视为不合格。")
+    lines.append("")
+    return "\n".join(lines) + "\n"
 
 
 def _lang_label(lang: str) -> str:
@@ -203,94 +225,80 @@ Hard rules:
 
 
 def translate_batch(
-    base: str,
-    key: str,
+    client,
     model: str,
     system: str,
     entries: list[dict],
     target_lang: str,
-    thinking_level: str = "LOW",
+    thinking_level: str | None = None,
     max_retries: int = 3,
 ) -> list[dict]:
     """Send a batch of entries, get back translated entries with same IDs."""
-    url = f"{base}/chat/completions"
-    headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
     user_content = json.dumps(entries, ensure_ascii=False)
-    payload = {
-        "model": model,
-        "temperature": 0.2,
-        "max_completion_tokens": 16384,
-        "thinking_level": thinking_level,
-        "messages": [
-            {"role": "system", "content": system},
-            {"role": "user", "content": user_content},
-        ],
-    }
+    messages = [
+        {"role": "system", "content": system},
+        {"role": "user", "content": user_content},
+    ]
 
     expected_ids = [e["id"] for e in entries]
-    last_err = None
 
-    for attempt in range(max_retries):
-        try:
-            r = requests.post(url, headers=headers, json=payload, timeout=600)
-            if r.status_code != 200:
-                last_err = f"HTTP {r.status_code}: {r.text[:500]}"
-                time.sleep(5 * (attempt + 1))
-                continue
+    try:
+        extra_args = {}
+        if thinking_level and client.provider in ("openai", "kimi"):
+            extra_args["thinking_level"] = thinking_level
+        
+        response = client.call_with_retry(
+            messages=messages,
+            model=model,
+            temperature=0.2,
+            max_tokens=16384,
+            max_retries=max_retries,
+            **extra_args
+        )
+        
+        content = response.content.strip()
+        # Strip markdown code fences if present
+        if content.startswith("```"):
+            content = content.split("\n", 1)[1] if "\n" in content else content[3:]
+        if content.endswith("```"):
+            content = content[: content.rfind("```")]
+        content = content.strip()
 
-            content = r.json()["choices"][0]["message"]["content"].strip()
-            # Strip markdown code fences if present
-            if content.startswith("```"):
-                content = content.split("\n", 1)[1] if "\n" in content else content[3:]
-            if content.endswith("```"):
-                content = content[: content.rfind("```")]
-            content = content.strip()
+        result = json.loads(content)
+        if not isinstance(result, list):
+            raise ValueError(f"LLM returned {type(result)}, expected list")
 
-            result = json.loads(content)
-            if not isinstance(result, list):
-                last_err = f"LLM returned {type(result)}, expected list"
-                time.sleep(3)
-                continue
+        result_ids = [e.get("id") for e in result]
+        if result_ids == expected_ids and all(
+            isinstance(e.get("text"), str) and e["text"].strip() for e in result
+        ):
+            for e in result:
+                e["text"] = normalize_legal_ordinals(e["text"], target_lang)
+            return result
 
-            result_ids = [e.get("id") for e in result]
-            if result_ids == expected_ids and all(
-                isinstance(e.get("text"), str) and e["text"].strip() for e in result
-            ):
-                for e in result:
-                    e["text"] = normalize_legal_ordinals(e["text"], target_lang)
-                return result
+        if len(result) == len(entries):
+            fixed = []
+            for src, out in zip(entries, result):
+                fixed.append({
+                    "id": src["id"],
+                    "text": normalize_legal_ordinals(out.get("text", ""), target_lang),
+                })
+            if all(f["text"].strip() for f in fixed):
+                return fixed
 
-            if len(result) == len(entries):
-                fixed = []
-                for src, out in zip(entries, result):
-                    fixed.append({
-                        "id": src["id"],
-                        "text": normalize_legal_ordinals(out.get("text", ""), target_lang),
-                    })
-                if all(f["text"].strip() for f in fixed):
-                    return fixed
+        raise ValueError(f"ID mismatch or empty entries: expected {len(entries)}, got {len(result)}")
 
-            last_err = f"ID mismatch or empty entries: expected {len(entries)}, got {len(result)}"
-            time.sleep(3)
-            continue
-
-        except json.JSONDecodeError as e:
-            last_err = f"JSON parse error: {e}"
-        except Exception as e:
-            last_err = str(e)
-        time.sleep(5 * (attempt + 1))
-
-    raise RuntimeError(f"translate_batch failed after {max_retries} retries: {last_err}")
+    except Exception as e:
+        raise RuntimeError(f"translate_batch failed: {e}")
 
 
 def retry_singles(
-    base: str,
-    key: str,
+    client,
     model: str,
     system: str,
     entries: list[dict],
     target_lang: str,
-    thinking_level: str,
+    thinking_level: str | None,
 ) -> list[dict]:
     """Fallback: translate entries one by one when batch fails."""
     results = []
@@ -298,7 +306,7 @@ def retry_singles(
         print(f"    retry single id={e['id']} …", file=sys.stderr, flush=True)
         try:
             out = translate_batch(
-                base, key, model, system, [e], target_lang, thinking_level, max_retries=2
+                client, model, system, [e], target_lang, thinking_level, max_retries=2
             )
             results.extend(out)
         except RuntimeError as err:
@@ -340,6 +348,7 @@ def main():
     )
     parser.add_argument("--resume", action="store_true", help="Resume from progress.json")
     parser.add_argument("--limit", type=int, default=0, help="Max batches to process (0=all)")
+    parser.add_argument("--provider", help="LLM provider (openai, kimi, gemini, anthropic). Uses default_provider from secrets if not specified.")
     parser.add_argument("--model", help="Override model from secrets")
     parser.add_argument(
         "--thinking-level",
@@ -370,8 +379,34 @@ def main():
         print(f"No batch_*.json in {entries_dir}", file=sys.stderr)
         sys.exit(1)
 
+    # Create LLM client from secrets
+    try:
+        client, model = create_client_from_secrets(
+            provider=args.provider,
+            task="translate"
+        )
+    except Exception as e:
+        print(f"Error initializing LLM client: {e}", file=sys.stderr)
+        sys.exit(1)
+    
+    if args.model:
+        model = args.model
+    
+    # Get thinking level from args, secrets, or default
+    thinking_level = args.thinking_level
+    if not thinking_level:
+        thinking_level = get_thinking_level()
+    if thinking_level:
+        thinking_level = thinking_level.upper()
+    
+    print(f"Provider: {client.provider}, Model: {model}", file=sys.stderr)
+    
     glossary_path = pathlib.Path(args.glossary) if args.glossary else None
-    glossary_seg = load_glossary_segment(glossary_path)
+    glossary_seg = load_glossary_segment(
+        glossary_path,
+        source_lang=args.source_lang,
+        target_lang=args.target_lang,
+    )
     law_bilingual = args.domain == "legal"
     if args.law_bilingual:
         law_bilingual = True
@@ -384,12 +419,6 @@ def main():
         domain=args.domain,
         law_bilingual=law_bilingual,
     )
-
-    base, key, model, thinking_level = load_openai_cfg()
-    if args.model:
-        model = args.model
-    if args.thinking_level:
-        thinking_level = args.thinking_level.upper()
 
     translated_path = output_dir / "translated.json"
     progress_path = output_dir / "progress.json"
@@ -418,7 +447,7 @@ def main():
         to_retry = [src_map[e["id"]] for e in failed if e["id"] in src_map]
         print(f"Retrying {len(to_retry)} failed entries …", file=sys.stderr)
 
-        retried = retry_singles(base, key, model, system, to_retry, args.target_lang, thinking_level)
+        retried = retry_singles(client, model, system, to_retry, args.target_lang, thinking_level)
         for e in retried:
             translated_map[e["id"]] = e
         _save_state(translated_map, done_batches, translated_path, progress_path, all_ids, output_dir)
@@ -446,10 +475,10 @@ def main():
         )
 
         try:
-            result = translate_batch(base, key, model, system, batch, args.target_lang, thinking_level)
+            result = translate_batch(client, model, system, batch, args.target_lang, thinking_level)
         except RuntimeError as e:
             print(f"  Batch failed, falling back to single-entry retry: {e}", file=sys.stderr)
-            result = retry_singles(base, key, model, system, batch, args.target_lang, thinking_level)
+            result = retry_singles(client, model, system, batch, args.target_lang, thinking_level)
 
         for e in result:
             translated_map[e["id"]] = e

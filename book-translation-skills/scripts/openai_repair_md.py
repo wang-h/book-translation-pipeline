@@ -1,21 +1,21 @@
-"""Repair OCR noise in Japanese book Markdown via OpenAI-compatible API.
+"""Repair OCR noise in Japanese book Markdown via LLM API.
+
+Supports multiple providers: OpenAI, Kimi, Gemini, Anthropic/Claude.
 
 Usage:
     python openai_repair_md.py --chunks-dir work/p2_repair_chunks --output work/p2_repaired/ch01_repaired.md
     python openai_repair_md.py --chunks-dir work/p2_repair_chunks --output ... --resume  # skip existing progress
+    python openai_repair_md.py --chunks-dir work/p2_repair_chunks --output ... --provider kimi
 """
 
 import argparse
 import json
 import pathlib
 import sys
-import time
 
-import requests
+from llm_client import create_client_from_secrets
 
 from book_translation_paths import resolve_workspace
-
-SECRETS_CANDIDATES = ("local.secrets.json", "secrets.json")
 
 SYSTEM_JA = """You are an OCR post-processor for a Japanese legal-education book (教育関係法).
 Fix OCR and layout-extraction artifacts only. Do NOT translate into Chinese or any other language.
@@ -53,74 +53,34 @@ Do NOT leave everything as `#`.
 Return ONLY the repaired Markdown for this chunk. No explanations."""
 
 
-def resolve_secrets_path() -> pathlib.Path | None:
-    root = resolve_workspace()
-    for name in SECRETS_CANDIDATES:
-        p = root / name
-        try:
-            if p.is_file():
-                return p
-        except OSError:
-            continue
-    return None
-
-
-def load_openai_cfg():
-    path = resolve_secrets_path()
-    if path is None:
-        print("No secrets.json / local.secrets.json", file=sys.stderr)
-        sys.exit(1)
-    data = json.loads(path.read_text(encoding="utf-8"))
-    oa = data.get("openai") or {}
-    base = (oa.get("base_url") or "https://api.openai.com/v1").rstrip("/")
-    key = oa.get("api_key")
-    model = oa.get("model") or "gpt-5.4-mini"
-    if not key:
-        print("openai.api_key missing in secrets", file=sys.stderr)
-        sys.exit(1)
-    return base, key, model
-
-
-def repair_chunk(base: str, key: str, model: str, user_text: str, max_retries: int = 3) -> str:
-    url = f"{base}/chat/completions"
-    headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
-    payload = {
-        "model": model,
-        "temperature": 0.15,
-        # aihubmix / o1-style models expect max_completion_tokens
-        "max_completion_tokens": 16384,
-        "messages": [
-            {"role": "system", "content": SYSTEM_JA},
-            {"role": "user", "content": user_text},
-        ],
-    }
-    last_err = None
-    for attempt in range(max_retries):
-        try:
-            r = requests.post(url, headers=headers, json=payload, timeout=600)
-            if r.status_code != 200:
-                last_err = f"HTTP {r.status_code}: {r.text[:500]}"
-                time.sleep(5 * (attempt + 1))
-                continue
-            data = r.json()
-            choice = data["choices"][0]["message"]["content"]
-            if not choice or not choice.strip():
-                last_err = "empty completion"
-                time.sleep(3)
-                continue
-            return choice.strip()
-        except Exception as e:
-            last_err = str(e)
-            time.sleep(5 * (attempt + 1))
-    raise RuntimeError(last_err or "repair_chunk failed")
+def repair_chunk(client, model: str, user_text: str) -> str:
+    messages = [
+        {"role": "system", "content": SYSTEM_JA},
+        {"role": "user", "content": user_text},
+    ]
+    
+    response = client.call_with_retry(
+        messages=messages,
+        model=model,
+        temperature=0.15,
+        max_tokens=16384,
+        max_retries=3,
+    )
+    
+    content = response.content.strip()
+    if not content:
+        raise RuntimeError("empty completion")
+    return content
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Repair JP Markdown chunks via OpenAI API")
+    parser = argparse.ArgumentParser(description="Repair JP Markdown chunks via LLM API")
     parser.add_argument("--chunks-dir", required=True, help="Directory with chunk_*.md")
     parser.add_argument("--output", required=True, help="Concatenated repaired Markdown path")
     parser.add_argument("--resume", action="store_true", help="Append only missing chunks (by progress file)")
     parser.add_argument("--limit", type=int, default=0, help="Process at most N chunks (0 = all)")
+    parser.add_argument("--provider", help="LLM provider (openai, kimi, gemini, anthropic). Uses default_provider from secrets if not specified.")
+    parser.add_argument("--model", help="Override model from secrets")
     args = parser.parse_args()
 
     chunks_dir = pathlib.Path(args.chunks_dir)
@@ -140,8 +100,20 @@ def main():
         out_path.unlink(missing_ok=True)
         progress_path.unlink(missing_ok=True)
 
-    base, key, model = load_openai_cfg()
-    print(f"Using model {model} at {base}", file=sys.stderr)
+    # Create LLM client from secrets
+    try:
+        client, model = create_client_from_secrets(
+            provider=args.provider,
+            task="extract"
+        )
+    except Exception as e:
+        print(f"Error initializing LLM client: {e}", file=sys.stderr)
+        sys.exit(1)
+    
+    if args.model:
+        model = args.model
+    
+    print(f"Provider: {client.provider}, Model: {model}", file=sys.stderr)
 
     limit = args.limit if args.limit > 0 else len(chunk_files)
     processed = 0
@@ -155,7 +127,7 @@ def main():
                 break
             raw = cf.read_text(encoding="utf-8")
             print(f"[{processed + 1}/{limit or '…'}] {cf.name} ({len(raw)} chars) …", file=sys.stderr, flush=True)
-            fixed = repair_chunk(base, key, model, raw)
+            fixed = repair_chunk(client, model, raw)
             out.write(fixed)
             if not fixed.endswith("\n"):
                 out.write("\n")
